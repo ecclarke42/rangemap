@@ -112,24 +112,23 @@ book for general information about operating without the standard library.
 
 */
 
+// TODO: docs
+
 #![no_std]
 extern crate alloc;
 
-mod inclusive_map;
-mod inclusive_set;
+pub mod iterators;
 mod map;
-mod range_wrapper;
-mod set;
-mod std_ext;
-#[cfg(test)]
-mod stupid_range_map;
+mod range;
+// mod set; // TODO
+// #[cfg(test)]
+// mod stupid_range_map;
 
-pub use inclusive_map::RangeInclusiveMap;
-pub use inclusive_set::RangeInclusiveSet;
 pub use map::RangeMap;
-pub use set::RangeSet;
-pub use std_ext::{StepFns, StepLite};
+pub use range::{Bound, Range};
+// pub use set::RangeSet;
+// pub use std_ext::{StepFns, StepLite};
 
 // Doc tests for README.
-#[cfg(feature = "nightly")]
-mod readme;
+// #[cfg(feature = "nightly")]
+// mod readme;

@@ -1,7 +1,7 @@
-use core::fmt::Debug;
-pub use core::{
+pub use core::ops::Bound;
+use core::{
     cmp::{max, min, Ordering},
-    ops::Bound,
+    fmt::Debug,
 };
 
 // TODO: how to express an empty range? just Option<Range<T>>?
@@ -45,6 +45,16 @@ impl<T> StartBound<T> {
             Bound::Included(x) | Bound::Excluded(x) => Some(x),
             Bound::Unbounded => None,
         }
+    }
+}
+
+impl<T: Clone> StartBound<&T> {
+    pub fn cloned(&self) -> StartBound<T> {
+        StartBound(match self.0 {
+            Bound::Excluded(t) => Bound::Excluded(t.clone()),
+            Bound::Included(t) => Bound::Included(t.clone()),
+            Bound::Unbounded => Bound::Unbounded,
+        })
     }
 }
 
@@ -121,6 +131,16 @@ impl<T> EndBound<T> {
             Bound::Included(x) | Bound::Excluded(x) => Some(x),
             Bound::Unbounded => None,
         }
+    }
+}
+
+impl<T: Clone> EndBound<&T> {
+    pub fn cloned(&self) -> EndBound<T> {
+        EndBound(match self.0 {
+            Bound::Excluded(t) => Bound::Excluded(t.clone()),
+            Bound::Included(t) => Bound::Included(t.clone()),
+            Bound::Unbounded => Bound::Unbounded,
+        })
     }
 }
 
@@ -244,9 +264,9 @@ impl<T> Range<T> {
     /// Shift the entire range by some value
     pub fn shift(&mut self, by: T)
     where
-        T: core::ops::AddAssign,
+        T: Clone + core::ops::AddAssign,
     {
-        self.start.value_mut().map(|s| *s += by);
+        self.start.value_mut().map(|s| *s += by.clone());
         self.end.value_mut().map(|e| *e += by);
     }
 
@@ -254,27 +274,27 @@ impl<T> Range<T> {
     /// unsigned type, where [`shift`] isn't useful)
     pub fn shift_left(&mut self, by: T)
     where
-        T: core::ops::SubAssign,
+        T: Clone + core::ops::SubAssign,
     {
-        self.start.value_mut().map(|s| *s -= by);
+        self.start.value_mut().map(|s| *s -= by.clone());
         self.end.value_mut().map(|e| *e -= by);
     }
 
     pub fn shift_right(&mut self, by: T)
     where
-        T: core::ops::AddAssign,
+        T: Clone + core::ops::AddAssign,
     {
-        self.start.value_mut().map(|s| *s += by);
+        self.start.value_mut().map(|s| *s += by.clone());
         self.end.value_mut().map(|e| *e += by);
     }
 
     /// Adjust the start of a range to a new lower bound.
-    pub fn adjust_left(&mut self, new_start: StartBound<T>) -> Self {
+    pub fn adjust_left(&mut self, new_start: Bound<T>) -> Self {
         todo!()
     }
 
     /// Adjust the end of a range to a new upper bound.
-    pub fn adjust_right(&mut self, new_end: EndBound<T>) -> Self {
+    pub fn adjust_right(&mut self, new_end: Bound<T>) -> Self {
         todo!()
     }
 
@@ -287,15 +307,15 @@ impl<T> Range<T> {
         }
     }
 
-    pub(crate) fn bound_before(&self) -> Option<EndBound<T>> {
-        match self.start.0 {
+    pub(crate) fn bound_before(&self) -> Option<EndBound<&T>> {
+        match &self.start.0 {
             Bound::Excluded(t) => Some(EndBound(Bound::Included(t))),
             Bound::Included(t) => Some(EndBound(Bound::Excluded(t))),
             Bound::Unbounded => None,
         }
     }
-    pub(crate) fn bound_after(&self) -> Option<StartBound<T>> {
-        match self.end.0 {
+    pub(crate) fn bound_after(&self) -> Option<StartBound<&T>> {
+        match &self.end.0 {
             Bound::Excluded(t) => Some(StartBound(Bound::Included(t))),
             Bound::Included(t) => Some(StartBound(Bound::Excluded(t))),
             Bound::Unbounded => None,
@@ -354,70 +374,6 @@ impl<T> Range<T> {
 
     pub fn up_to_and_including_start(&self) -> core::ops::RangeTo<Bound<&T>> {
         ..self.start.as_bound_inner_ref()
-    }
-}
-
-/// Wrapper type for items the map (range should only ever be increasing)
-#[derive(Clone)]
-pub(crate) struct Key<T>(pub(crate) Range<T>);
-
-impl<T: Copy> Copy for Key<T> {}
-impl<T: Debug> Debug for Key<T> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{:?}", self.0)
-    }
-}
-
-impl<T> core::borrow::Borrow<StartBound<T>> for Key<T> {
-    fn borrow(&self) -> &StartBound<T> {
-        &self.0.start
-    }
-}
-// impl<'a, T> core::borrow::Borrow<StartBound<&'a T>> for Key<T> {
-//     fn borrow(&self) -> &StartBound<&'a T> {
-//         match &self.0.start.0 {
-//             Bound::Included(x) => Bound::Included(x),
-//             Bound::Excluded(x) => Bound::Excluded(x),
-//             Bound::Unbounded => Bound::Unbounded,
-//         }
-//     }
-// }
-impl<T> core::borrow::Borrow<Bound<T>> for Key<T> {
-    fn borrow(&self) -> &Bound<T> {
-        &self.0.start.0
-    }
-}
-impl<T: PartialEq> PartialEq for Key<T> {
-    fn eq(&self, other: &Key<T>) -> bool {
-        self.0.start == other.0.start
-    }
-}
-impl<T: PartialEq> PartialEq<Bound<T>> for Key<T> {
-    fn eq(&self, other: &Bound<T>) -> bool {
-        self.0.start.0.eq(other)
-    }
-}
-impl<T: PartialEq> PartialEq<T> for Key<T> {
-    fn eq(&self, other: &T) -> bool {
-        if let Bound::Included(start) = &self.0.start.0 {
-            start == other
-        } else {
-            false
-        }
-    }
-}
-impl<T: Eq> Eq for Key<T> {}
-impl<T: Ord> Ord for Key<T> {
-    fn cmp(&self, other: &Key<T>) -> Ordering {
-        self.0.start.cmp(&other.0.start)
-    }
-}
-impl<T> PartialOrd for Key<T>
-where
-    T: Ord,
-{
-    fn partial_cmp(&self, other: &Key<T>) -> Option<Ordering> {
-        Some(self.cmp(other))
     }
 }
 

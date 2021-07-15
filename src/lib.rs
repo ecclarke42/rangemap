@@ -118,6 +118,7 @@ book for general information about operating without the standard library.
 extern crate alloc;
 
 pub mod iterators;
+mod key;
 mod map;
 mod range;
 // mod set; // TODO

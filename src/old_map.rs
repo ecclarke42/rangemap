@@ -1,20 +1,12 @@
-use self::entry::{Entry, OccupiedEntry, VacantEntry};
-
-use super::range_wrapper::RangeStartWrapper;
-use crate::std_ext::*;
 use alloc::collections::BTreeMap;
 use core::cmp::Ordering;
 use core::fmt::{self, Debug};
 use core::hash::{Hash, Hasher};
-use core::ops::{Index, Range};
+use core::ops::Index;
 use core::prelude::v1::*;
 use core::{borrow::Borrow, ops::Bound};
 
-pub mod entry;
-pub mod iterators;
-#[cfg(test)]
-mod tests;
-
+use crate::Range;
 /// A map whose keys are stored as (half-open) ranges bounded
 /// inclusively below and exclusively above `(start..end)`.
 ///
@@ -24,7 +16,7 @@ mod tests;
 pub struct RangeMap<K, V> {
     // Wrap ranges so that they are `Ord`.
     // See `range_wrapper.rs` for explanation.
-    btm: BTreeMap<RangeStartWrapper<K>, V>,
+    btm: BTreeMap<crate::key::Key<K>, V>,
 }
 
 impl<K, V> RangeMap<K, V>
@@ -32,11 +24,6 @@ where
     K: Ord + Clone,
     V: Eq + Clone,
 {
-
-
-    
-
-
     // TODO: Implement: Should this mutate the entire containing range (the
     // implementation as a map might see it), or should it add a new point
     // range?). Because of this ambiguity, maybe this function *shouldn't* be
@@ -78,15 +65,15 @@ where
     // Maybe return another RangeMap with the removed segments? But that would allocate,
     // so that could be opt-in via a similar function (insert_returning, or something)?
 
-    pub fn insert(&mut self, range: Range<K>, value: V) {
+    pub fn old_insert(&mut self, range: Range<K>, value: V) {
         // We don't want to have to make empty ranges make sense;
         // they don't represent anything meaningful in this structure.
-        assert!(range.start < range.end);
+        // assert!(range.start < range.end);
 
         // Wrap up the given range so that we can "borrow"
         // it as a wrapper reference to either its start or end.
         // See `range_wrapper.rs` for explanation of these hacks.
-        let mut new_range_start_wrapper: RangeStartWrapper<K> = RangeStartWrapper::new(range);
+        let mut new_range_start_wrapper = crate::key::Key(range);
         let new_value = value;
 
         // Get ranges starting at or before the new range that touch it. The
@@ -107,14 +94,14 @@ where
                 Bound::Included(new_range_start_wrapper.clone()),
             ))
             .rev()
-            .take_while(|(r, _)| r.range.touches(&range))
+            .take_while(|(r, _)| r.0.touches(&range))
             .last()
         {
             // TODO: clean up
             self.adjust_touching_ranges_for_insert(
                 prev_range_start_wrapper.clone(),
                 prev_range_value.clone(),
-                &mut new_range_start_wrapper.range,
+                &mut new_range_start_wrapper.0,
                 &new_value,
             );
         }
@@ -131,16 +118,17 @@ where
         //
         // REVISIT: Possible micro-optimisation: `impl Borrow<T> for RangeStartWrapper<T>`
         // and use that to search here, to avoid constructing another `RangeStartWrapper`.
-        let new_range_end = RangeStartWrapper::point(new_range_start_wrapper.range.end.clone());
+        let new_range_end = new_range_start_wrapper.0.bound_after().unwrap().cloned();
         for (stored_range_start_wrapper, stored_value) in self.btm.range((
-            Bound::Included(&new_range_start_wrapper),
+            Bound::Included(&new_range_start_wrapper.0.start.clone()),
             Bound::Included(&new_range_end),
         )) {
             // One extra exception: if we have different values,
             // and the stored range starts at the end of the range to insert,
             // then we don't want to keep looping forever trying to find more!
             #[allow(clippy::suspicious_operation_groupings)]
-            if stored_range_start_wrapper.range.start == new_range_start_wrapper.range.end
+            if stored_range_start_wrapper.0.start
+                == new_range_start_wrapper.0.bound_after().unwrap().cloned()
                 && *stored_value != new_value
             {
                 // We're beyond the last stored range that could be relevant.
@@ -157,7 +145,7 @@ where
             self.adjust_touching_ranges_for_insert(
                 stored_range_start_wrapper,
                 stored_value,
-                &mut new_range_start_wrapper.range,
+                &mut new_range_start_wrapper.0,
                 &new_value,
             );
         }
@@ -166,102 +154,9 @@ where
         self.btm.insert(new_range_start_wrapper, new_value);
     }
 
-    // TODO: similar to insert(), can we return values? overlaps?
-    /// Removes a range from the map, if all or any of it was present.
-    ///
-    /// If the range to be removed _partially_ overlaps any ranges
-    /// in the map, then those ranges will be contracted to no
-    /// longer cover the removed range.
-    ///
-    ///
-    /// # Panics
-    ///
-    /// Panics if range `start >= end`.
-    ///
-    /// # Examples
-    ///
-    /// Basic usage:
-    ///
-    /// ```
-    /// use rangemap::RangeMap;
-    ///
-    /// let mut map = RangeMap::new();
-    /// map.insert(0..10, "a");
-    /// map.remove(3..5);
-    /// assert_eq!(map.get(&0), Some(&"a"));
-    /// assert_eq!(map.get(&3), None);
-    /// assert_eq!(map.get(&5), Some(&"a"));
-    /// assert_eq!(map.get(&8), Some(&"a"));
-    /// ```
-    pub fn remove(&mut self, range: Range<K>) {
-        // We don't want to have to make empty ranges make sense;
-        // they don't represent anything meaningful in this structure.
-        assert!(range.start < range.end);
-
-        let range_start_wrapper: RangeStartWrapper<K> = RangeStartWrapper::new(range);
-        let range = &range_start_wrapper.range;
-
-        // Is there a stored range overlapping the start of
-        // the range to insert?
-        //
-        // If there is any such stored range, it will be the last
-        // whose start is less than or equal to the start of the range to insert.
-        if let Some((stored_range_start_wrapper, stored_value)) = self
-            .btm
-            .range((Bound::Unbounded, Bound::Included(&range_start_wrapper)))
-            .next_back()
-            .filter(|(stored_range_start_wrapper, _stored_value)| {
-                // Does the only candidate range overlap
-                // the range to insert?
-                stored_range_start_wrapper.range.overlaps(&range)
-            })
-            .map(|(stored_range_start_wrapper, stored_value)| {
-                (stored_range_start_wrapper.clone(), stored_value.clone())
-            })
-        {
-            self.adjust_overlapping_ranges_for_remove(
-                stored_range_start_wrapper,
-                stored_value,
-                &range,
-            );
-        }
-
-        // Are there any stored ranges whose heads overlap the range to insert?
-        //
-        // If there are any such stored ranges (that weren't already caught above),
-        // their starts will fall somewhere after the start of the range to insert,
-        // and before its end.
-        //
-        // REVISIT: Possible micro-optimisation: `impl Borrow<T> for RangeStartWrapper<T>`
-        // and use that to search here, to avoid constructing another `RangeStartWrapper`.
-        let new_range_end_as_start = RangeStartWrapper::new(range.end.clone()..range.end.clone());
-        while let Some((stored_range_start_wrapper, stored_value)) = self
-            .btm
-            .range((
-                Bound::Excluded(&range_start_wrapper),
-                Bound::Excluded(&new_range_end_as_start),
-            ))
-            .next()
-            .map(|(stored_range_start_wrapper, stored_value)| {
-                (stored_range_start_wrapper.clone(), stored_value.clone())
-            })
-        {
-            self.adjust_overlapping_ranges_for_remove(
-                stored_range_start_wrapper,
-                stored_value,
-                &range,
-            );
-        }
-    }
-
-    // TODO: Implement remove_entry()? It could just be folded into remove, returning the
-    // original range of the items removed... But we get the same overlap issue with insert
-
-
-
     fn adjust_touching_ranges_for_insert(
         &mut self,
-        stored_range_start_wrapper: RangeStartWrapper<K>,
+        stored_range_start_wrapper: crate::key::Key<K>,
         stored_value: V,
         new_range: &mut Range<K>,
         new_value: &V,
@@ -308,32 +203,6 @@ where
                 // No-op; they're not overlapping,
                 // so we can just keep both ranges as they are.
             }
-        }
-    }
-
-    fn adjust_overlapping_ranges_for_remove(
-        &mut self,
-        stored_range_start_wrapper: RangeStartWrapper<K>,
-        stored_value: V,
-        range_to_remove: &Range<K>,
-    ) {
-        // Delete the stored range, and then add back between
-        // 0 and 2 subranges at the ends of the range to insert.
-        self.btm.remove(&stored_range_start_wrapper);
-        let stored_range = stored_range_start_wrapper.range;
-        if stored_range.start < range_to_remove.start {
-            // Insert the piece left of the range to insert.
-            self.btm.insert(
-                RangeStartWrapper::new(stored_range.start..range_to_remove.start.clone()),
-                stored_value.clone(),
-            );
-        }
-        if stored_range.end > range_to_remove.end {
-            // Insert the piece right of the range to insert.
-            self.btm.insert(
-                RangeStartWrapper::new(range_to_remove.end.clone()..stored_range.end),
-                stored_value,
-            );
         }
     }
 

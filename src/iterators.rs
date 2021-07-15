@@ -1,4 +1,4 @@
-use crate::{range::Key, Bound, Range, RangeMap};
+use crate::{key::Key, Range, RangeMap};
 
 use core::{
     fmt::{self, Debug},
@@ -507,24 +507,26 @@ where
             if let Some(prev) = self.prev {
                 // Get the adjacent bound to the end of the previous range
 
-                let start = prev.bound_after()?; // If none, no more gaps (this extends forwards to infinity)
+                let start = prev.bound_after()?.cloned(); // If none, no more gaps (this extends forwards to infinity)
                 let end = next
                     .bound_before()
-                    .expect("Unbounded internal range in RangeMap");
+                    .expect("Unbounded internal range in RangeMap")
+                    .cloned();
                 self.prev = Some(next);
                 Some(Range { start, end })
             } else {
                 // No previous bound means first gap
 
                 // Get the adjacent bound to the end of the first range
-                let start = next.bound_after()?; // If none, no more gaps (this extends forwards to infinity)
+                let start = next.bound_after()?.cloned(); // If none, no more gaps (this extends forwards to infinity)
 
                 // Check if we have another range
                 if let Some((next, _)) = self.iter.next() {
                     // Store the end of the next segment for next iteration
                     let end = next
                         .bound_before()
-                        .expect("Unbounded internal range in RangeMap");
+                        .expect("Unbounded internal range in RangeMap")
+                        .cloned();
 
                     self.prev = Some(next);
                     Some(Range { start, end })

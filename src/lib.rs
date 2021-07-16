@@ -117,18 +117,16 @@ book for general information about operating without the standard library.
 #![no_std]
 extern crate alloc;
 
-pub mod iterators;
-mod key;
-mod map;
-mod range;
-// mod set; // TODO
+pub mod map;
+pub mod range;
+pub mod set;
+
 // #[cfg(test)]
 // mod stupid_range_map;
 
 pub use map::RangeMap;
 pub use range::{Bound, Range};
-// pub use set::RangeSet;
-// pub use std_ext::{StepFns, StepLite};
+pub use set::RangeSet;
 
 // Doc tests for README.
 // #[cfg(feature = "nightly")]

@@ -1,12 +1,31 @@
-use core::{cmp::max, ops::RangeBounds};
+use alloc::{collections::BTreeMap, vec::Vec};
+use core::{
+    cmp::{max, Ordering},
+    fmt::Debug,
+    hash::{Hash, Hasher},
+    ops::{Index, RangeBounds},
+};
 
-use alloc::collections::BTreeMap;
+use crate::{range::StartBound, Bound, Range};
+pub(crate) use key::Key;
 
-use crate::{key::Key, range::StartBound, Bound, Range};
+pub mod iterators;
+mod key;
 
 // TODO: docs like BTreeMap
 
-pub struct RangeMap<K, V>(pub(crate) BTreeMap<Key<K>, V>);
+#[derive(Clone)]
+pub struct RangeMap<K, V> {
+    pub(crate) map: BTreeMap<Key<K>, V>,
+
+    /// Reuseable storage for working set of keys
+    /// (many insertions/deletions will allocate less)
+    ///
+    /// TODO Performance Improvement:
+    ///     This (and successor key collection) could be more streamlined with a
+    ///     few strategically placed `unsafe` blocks
+    store: Vec<Key<K>>,
+}
 
 impl<K, V> RangeMap<K, V> {
     /// Makes a new, empty `RangeMap`.
@@ -29,7 +48,10 @@ impl<K, V> RangeMap<K, V> {
     where
         K: Ord,
     {
-        RangeMap(BTreeMap::new())
+        RangeMap {
+            map: BTreeMap::new(),
+            store: Vec::new(),
+        }
     }
 
     // TODO: docs
@@ -55,7 +77,10 @@ impl<K, V> RangeMap<K, V> {
     {
         let mut inner = BTreeMap::new();
         inner.insert(Key(Range::full()), value);
-        RangeMap(inner)
+        RangeMap {
+            map: inner,
+            store: Vec::new(),
+        }
     }
 
     /// Clears the map, removing all elements.
@@ -73,7 +98,13 @@ impl<K, V> RangeMap<K, V> {
     /// assert!(a.is_empty());
     /// ```
     pub fn clear(&mut self) {
-        self.0.clear()
+        self.map.clear();
+        self.store = Vec::new(); // Reset capacity
+    }
+
+    // TODO: docs
+    pub fn shrink_to_fit(&mut self) {
+        self.store = Vec::new(); // Reset capacity
     }
 
     /// Returns a reference to the value corresponding to the given point,
@@ -121,7 +152,7 @@ impl<K, V> RangeMap<K, V> {
         // The only stored range that could contain the given key is the
         // last stored range whose start is less than or equal to this key.
         // TODO: add tests
-        self.0
+        self.map
             .range(..=(StartBound(Bound::Included(k.clone()))))
             .rev()
             .map(|(w, v)| (&w.0, v))
@@ -149,7 +180,7 @@ impl<K, V> RangeMap<K, V> {
         // The only stored range that could contain the given key is the
         // last stored range whose start is less than or equal to this key.
         // TODO: add tests
-        self.0
+        self.map
             .range_mut(..=(StartBound(Bound::Included(k.clone()))))
             .rev()
             .map(|(w, v)| (&w.0, v))
@@ -182,7 +213,7 @@ impl<K, V> RangeMap<K, V> {
     ///
     /// NOTE: This is not necessarily (or likely) a contiguous range!
     pub fn bounds(&self) -> Option<Range<&K>> {
-        let mut iter = self.0.iter();
+        let mut iter = self.map.iter();
         iter.next().map(|(first, _)| {
             if let Some((last, _)) = iter.next_back() {
                 // 2 or more items, use widest possible bounds
@@ -198,11 +229,11 @@ impl<K, V> RangeMap<K, V> {
     }
     /// Get the lowest bound covered by the ranges in this map
     pub fn lower_bound(&self) -> Option<&Bound<K>> {
-        self.0.iter().next().map(|(range, _)| &range.0.start.0)
+        self.map.iter().next().map(|(range, _)| &range.0.start.0)
     }
     /// Get the highest bound covered by the ranges in this map
     pub fn upper_bound(&self) -> Option<&Bound<K>> {
-        self.0.iter().next_back().map(|(range, _)| &range.0.end.0)
+        self.map.iter().next_back().map(|(range, _)| &range.0.end.0)
     }
 }
 
@@ -273,7 +304,7 @@ impl<K: Clone + Ord, V: Clone + Eq> RangeMap<K, V> {
     }
 
     // Set a value for the specified range, overwriting any existing subset ranges (overlapping ranges will be truncated at the bounds of this range)
-    fn set<R: core::ops::RangeBounds<K>>(&mut self, range: R, value: V)
+    pub fn set<R: core::ops::RangeBounds<K>>(&mut self, range: R, value: V)
     where
         K: Clone + Ord,
         V: Clone + Eq,
@@ -296,8 +327,8 @@ impl<K: Clone + Ord, V: Clone + Eq> RangeMap<K, V> {
         V: Clone + Eq,
     {
         // In case this is an empty map, exit early
-        if self.0.is_empty() {
-            self.0.insert(Key(range), value);
+        if self.map.is_empty() {
+            self.map.insert(Key(range), value);
             return;
         }
 
@@ -313,7 +344,7 @@ impl<K: Clone + Ord, V: Clone + Eq> RangeMap<K, V> {
         // overlapping) in case we can combine the ranges when they have equal
         // values
         let leftmost = self
-            .0
+            .map
             .range(..=range.start.clone())
             .rev()
             .take_while(|(r, _)| r.0.touches(&range))
@@ -328,7 +359,7 @@ impl<K: Clone + Ord, V: Clone + Eq> RangeMap<K, V> {
                 if leftmost_touching_range.0.end > range.end {
                     range.end = leftmost_touching_range.0.end.clone();
                 }
-                self.0.remove(&leftmost_touching_range);
+                self.map.remove(&leftmost_touching_range);
             } else if range.overlaps(&leftmost_touching_range.0) {
                 // Split an overlapping range to preserve non-overlapped values
                 self.split_key(&leftmost_touching_range, &range, removed_ranges);
@@ -347,14 +378,15 @@ impl<K: Clone + Ord, V: Clone + Eq> RangeMap<K, V> {
         if let Some(bound_after) = range.bound_after().map(|b| b.cloned()) {
             // Just store keys, so we don't clone values
             // TODO: better implementation?
-            let successors = self
-                .0
-                .range(range.start.clone()..=bound_after.clone())
-                .map(|(k, _)| k.clone())
-                .collect::<alloc::vec::Vec<_>>();
+            self.store.clear();
+            self.store.extend(
+                self.map
+                    .range(range.start.clone()..=bound_after.clone())
+                    .map(|(k, _)| k.clone()),
+            );
 
-            for mut successor in successors {
-                let successor_value = self.0.remove(&successor).unwrap();
+            for mut successor in self.store.drain(..) {
+                let successor_value = self.map.remove(&successor).unwrap();
                 if value == successor_value {
                     // If values are the same, merge the ranges (and don't
                     // consider the successor part removed).
@@ -371,7 +403,7 @@ impl<K: Clone + Ord, V: Clone + Eq> RangeMap<K, V> {
 
                     // If overlapping, we need to split it
                     if successor.0.end > range.end {
-                        self.0.insert(
+                        self.map.insert(
                             Key(Range {
                                 start: bound_after,
                                 end: successor.0.end.clone(),
@@ -391,13 +423,13 @@ impl<K: Clone + Ord, V: Clone + Eq> RangeMap<K, V> {
         } else {
             // No upper bound, all following ranges are removed or merged
             let successors = self
-                .0
+                .map
                 .range(range.start.clone()..)
                 .map(|(k, _)| k.clone())
                 .collect::<alloc::vec::Vec<_>>();
 
             for successor in successors {
-                let v = self.0.remove(&successor).unwrap();
+                let v = self.map.remove(&successor).unwrap();
                 if value != v {
                     removed_ranges.insert(successor, v);
                 }
@@ -405,7 +437,7 @@ impl<K: Clone + Ord, V: Clone + Eq> RangeMap<K, V> {
         }
 
         // Finally, insert the new range and return the removed ranges
-        self.0.insert(Key(range), value);
+        self.map.insert(Key(range), value);
     }
 
     // Insert a value for empty regions (gaps) in the specified range (i.e. `set_range` but without overwrite)
@@ -415,8 +447,8 @@ impl<K: Clone + Ord, V: Clone + Eq> RangeMap<K, V> {
         let mut range = Range::new(range);
 
         // In case this is an empty map, exit early
-        if self.0.is_empty() {
-            self.0.insert(Key(range), value);
+        if self.map.is_empty() {
+            self.map.insert(Key(range), value);
             return;
         }
 
@@ -424,7 +456,7 @@ impl<K: Clone + Ord, V: Clone + Eq> RangeMap<K, V> {
         // or touch this one
 
         let leftmost = self
-            .0
+            .map
             .range(..=range.start.clone())
             .rev()
             .take_while(|(r, _)| r.0.touches(&range))
@@ -438,7 +470,7 @@ impl<K: Clone + Ord, V: Clone + Eq> RangeMap<K, V> {
                 if leftmost_touching_range.0.end > range.end {
                     range.end = leftmost_touching_range.0.end.clone();
                 }
-                self.0.remove(&leftmost_touching_range);
+                self.map.remove(&leftmost_touching_range);
             } else if leftmost_touching_range.0.end < range.end {
                 // If this range extends past the end of the previous range,
                 // truncate this range.
@@ -452,27 +484,29 @@ impl<K: Clone + Ord, V: Clone + Eq> RangeMap<K, V> {
 
         // Get successors of this insertion range. Both are treated the same
         // (unlike in insert)
-        let successors = if let Some(bound_after) = range.bound_after().map(|b| b.cloned()) {
-            self.0.range(range.start.clone()..=bound_after)
-        } else {
-            self.0.range(range.start.clone()..)
-        }
-        .map(|(k, _)| k.clone())
-        .collect::<alloc::vec::Vec<_>>();
+        self.store.clear();
+        self.store.extend(
+            if let Some(bound_after) = range.bound_after().map(|b| b.cloned()) {
+                self.map.range(range.start.clone()..=bound_after)
+            } else {
+                self.map.range(range.start.clone()..)
+            }
+            .map(|(k, _)| k.clone()),
+        );
 
         // Keep marching along the insertion range and insert gaps as we find them
-        for successor in successors {
-            let successor_value = self.0.get(&successor).unwrap();
+        for successor in self.store.drain(..) {
+            let successor_value = self.map.get(&successor).unwrap();
             // If we can merge ranges, do so
             if value.eq(successor_value) {
-                let (removed_range, _) = self.0.remove_entry(&successor).unwrap();
+                let (removed_range, _) = self.map.remove_entry(&successor).unwrap();
                 range.end = max(removed_range.0.end, range.end);
             } else {
                 // Otherwise, we may need to insert a gap. We can only
                 // insert if the range starts before the successor
                 // (it shouldn't ever by greater, but could be equal)
                 if successor.0.start > range.start {
-                    self.0.insert(
+                    self.map.insert(
                         Key(Range {
                             start: range.start.clone(),
                             end: successor
@@ -498,7 +532,7 @@ impl<K: Clone + Ord, V: Clone + Eq> RangeMap<K, V> {
         }
 
         // Any leftover range can then be inserted as a "last gap"
-        self.0.insert(Key(range), value);
+        self.map.insert(Key(range), value);
     }
 
     // Unset all values in a given range. Overlapping ranges will be truncated at the bounds of this range
@@ -543,12 +577,12 @@ impl<K: Clone + Ord, V: Clone + Eq> RangeMap<K, V> {
     ) {
         // Unwrap here is fine, since the callers of this should have already
         // determined that the key exists
-        let (mut removed_range, value) = self.0.remove_entry(key).unwrap();
+        let (mut removed_range, value) = self.map.remove_entry(key).unwrap();
 
         // Insert a split of the range to the left (if necessary)
         if removed_range.0.start < range_to_remove.start {
             removed_range.0.start = range_to_remove.start.clone();
-            self.0.insert(
+            self.map.insert(
                 Key(Range {
                     start: removed_range.0.start.clone(),
                     end: range_to_remove.bound_before().unwrap().cloned(), // From above inequality, this must not be unbound
@@ -560,7 +594,7 @@ impl<K: Clone + Ord, V: Clone + Eq> RangeMap<K, V> {
         // Insert a split of the range to the right (if necessary)
         if removed_range.0.end > range_to_remove.end {
             removed_range.0.end = range_to_remove.end.clone();
-            self.0.insert(
+            self.map.insert(
                 Key(Range {
                     start: range_to_remove.bound_after().unwrap().cloned(), // same as above
                     end: removed_range.0.end.clone(),
@@ -573,13 +607,13 @@ impl<K: Clone + Ord, V: Clone + Eq> RangeMap<K, V> {
 
     fn remove_internal(&mut self, range: Range<K>, removed_ranges: &mut MaybeMap<K, V>) {
         // Return early if we can
-        if self.0.is_empty() {
+        if self.map.is_empty() {
             return;
         }
 
         // Get the first range before this one
         let previous_range = self
-            .0
+            .map
             .range(..=range.start.clone())
             .rev()
             .next()
@@ -594,33 +628,44 @@ impl<K: Clone + Ord, V: Clone + Eq> RangeMap<K, V> {
         // Check if there are any ranges starting inside the range to remove.
         // Unlike insert, we don't care about touching ranges because we
         // won't be merging them.
-        let successors = if let Some(after) = range.bound_after().map(|b| b.cloned()) {
-            self.0.range(range.start.clone()..=after)
-        } else {
-            self.0.range(range.start.clone()..)
-        }
-        .map(|(k, _)| k.clone())
-        .collect::<alloc::vec::Vec<_>>();
+        // TODO: use store
+        self.store.clear();
+        self.store.extend(
+            if let Some(after) = range.bound_after().map(|b| b.cloned()) {
+                self.map.range(range.start.clone()..=after)
+            } else {
+                self.map.range(range.start.clone()..)
+            }
+            .map(|(k, _)| k.clone()),
+        );
 
-        for mut successor in successors {
-            let value = self.0.remove(&successor).unwrap();
+        for mut successor in self.store.drain(..) {
+            let value = self.map.remove(&successor).unwrap();
 
             // Must be the last range
             if successor.0.end > range.end {
-                self.0.insert(
+                self.map.insert(
                     Key(Range {
                         start: range.bound_after().unwrap().cloned(), // Implicitly not none due to less than successor end
                         end: successor.0.end.clone(),
                     }),
                     value.clone(),
                 );
-                successor.0.end = range.end.clone();
+                successor.0.end = range.end;
                 removed_ranges.insert(successor, value);
                 break;
             } else {
                 removed_ranges.insert(successor, value);
             }
         }
+    }
+
+    pub fn retain<F>(&mut self, mut f: F)
+    where
+        K: Ord,
+        F: FnMut(&Key<K>, &mut V) -> bool,
+    {
+        self.map.retain(f)
     }
 
     /// Moves all elements from `other` into `Self`, leaving `other` empty.
@@ -655,71 +700,123 @@ impl<K: Clone + Ord, V: Clone + Eq> RangeMap<K, V> {
     where
         K: Ord,
     {
-        // Do we have to append anything at all?
-        if other.is_empty() {
-            return;
-        }
+        // self.bounds().is_none() implies an empty map
+        match (self.bounds(), other.bounds()) {
+            // Other is empty, nothing to append
+            (_, None) => {
+                // NoOp
+            }
 
-        // We can just swap `self` and `other` if `self` is empty.
-        if self.is_empty() {
-            core::mem::swap(self, other);
-            return;
-        }
+            // Self is empty, swap it with other
+            (None, _) => core::mem::swap(self, other),
 
-        // Otherwise, insert everything from other into self
-        let other_iter = core::mem::take(other).into_iter();
-        for (range, value) in other_iter {
-            self.set(range, value)
+            // Overlapping ranges, we must insert each range in other
+            (Some(a), Some(b)) if a.overlaps(&b) => {
+                for (range, value) in core::mem::take(&mut other.map) {
+                    self.set(range.0, value)
+                }
+            }
+
+            // If there isn't any overlap, we can safely insert all of the
+            // items in other directly into the inner map
+            (Some(_), Some(_)) => {
+                for (range, value) in core::mem::take(&mut other.map) {
+                    self.map.insert(range, value);
+                }
+            }
         }
     }
 
-    // TODO
-    // /// a.insert(0..1, "a");
-    // /// a.insert(1..2, "b");
-    // /// a.insert(2..3, "c");
-    // /// a.insert(3..4, "d");
-    // ///
-    // /// let b = a.split_off(&2);
-    // ///
-    // /// assert_eq!(a.len(), 2);
-    // /// assert_eq!(b.len(), 3);
-    // ///
-    // /// assert_eq!(a[&0], "a");
-    // /// assert_eq!(a[&1], "b");
-    // /// assert!(a.get(&2).is_none());
-    // ///
-    // /// assert_eq!(b[&2], "c");
-    // /// assert_eq!(b[&3], "d");
-    // /// assert!(b.get(&1).is_none());
-    // /// ```
-    // pub fn split_off(&mut self, key: &K) -> Self {
-    //     if self.is_empty() {
-    //         return Self::new();
-    //     }
+    // TODO: Note that
+    /// ```
+    /// a.insert(0..1, "a");
+    /// a.insert(1..2, "b");
+    /// a.insert(2..3, "c");
+    /// a.insert(3..4, "d");
+    ///
+    /// let b = a.split_off(&2);
+    ///
+    /// assert_eq!(a.len(), 2);
+    /// assert_eq!(b.len(), 3);
+    ///
+    /// assert_eq!(a[&0], "a");
+    /// assert_eq!(a[&1], "b");
+    /// assert!(a.get(&2).is_none());
+    ///
+    /// assert_eq!(b[&2], "c");
+    /// assert_eq!(b[&3], "d");
+    /// assert!(b.get(&1).is_none());
+    /// ```
+    // TODO: at: Into<StartBound<K>>
+    pub fn split_off(&mut self, at: StartBound<K>) -> Self {
+        if self.is_empty() {
+            return Self::new();
+        }
 
-    //     // Split non-overlapping items
-    //     let other = self.btm.split_off(&RangeStartWrapper::point(key.clone()));
+        // Split non-overlapping items
+        let other = self.map.split_off(&at);
 
-    //     // If there are still items in the lower map (self.btm), check if the
-    //     // last range crosses the boundary into the upper map
-    //     if let Some((last_range_wrapper, _)) = self.btm.iter().next_back() {
-    //         if last_range_wrapper.range.contains(key) {
-    //             // This should always unwrap, because we know the key exists
-    //             let value = self.btm.remove(last_range_wrapper).unwrap();
+        // TODO: clean up
 
-    //             // Reinsert truncated range in each
-    //             self.0.insert(
-    //                 RangeStartWrapper::new(last_range_wrapper.range.start..key.clone()),
-    //                 value.clone(),
-    //             );
-    //             other.0.insert(
-    //                 RangeStartWrapper::new(key.clone()..last_range_wrapper.range.end),
-    //                 value,
-    //             );
-    //         }
-    //     }
+        // If there are still items in the lower map, check if the last range
+        // crosses the boundary into the upper map
+        // No split should be necessary if `at` is unbounded
+        if let Some((split_range, _)) = self.map.iter().next_back() {
+            // These should all be together and available if there's a split
+            if let Some((left_end, at_value)) = at.before().zip(at.value()) {
+                if split_range.0.contains(at_value) {
+                    // This should always unwrap, because we know the key exists
+                    let value = self.map.remove(split_range).unwrap();
 
-    //     Self(other)
+                    // Reinsert truncated range in each
+                    self.map.insert(
+                        Key(Range {
+                            start: split_range.0.start.clone(),
+                            end: left_end.cloned(),
+                        }),
+                        value.clone(),
+                    );
+                    other.insert(
+                        Key(Range {
+                            start: at.clone(),
+                            end: split_range.0.end.clone(),
+                        }),
+                        value,
+                    );
+                }
+            }
+        }
+
+        Self {
+            map: other,
+            store: Vec::new(),
+        }
+    }
+
+    // /// Get an iterator of keys and values starting before a specified point
+    // /// (decreasing / moving to the left)
+    // fn get_segments_starting_before(&self, k: &K) -> impl Iterator<Item = (&Range<K>, &V)> {
+    //     self.btm
+    //         .range((
+    //             Bound::Unbounded,
+    //             Bound::Included(RangeStartWrapper::new(k.clone()..k.clone())),
+    //         ))
+    //         .rev()
+    //         .map(|(w, v)| (&w.range, v))
+    // }
+    // /// Get an iterator of mutable keys and values starting before a specified
+    // /// point (decreasing / moving to the left)
+    // fn get_segments_starting_before_mut(
+    //     &mut self,
+    //     k: &K,
+    // ) -> impl Iterator<Item = (&Range<K>, &mut V)> {
+    //     self.btm
+    //         .range_mut((
+    //             Bound::Unbounded,
+    //             Bound::Included(RangeStartWrapper::new(k.clone()..k.clone())),
+    //         ))
+    //         .rev()
+    //         .map(|(w, v)| (&w.range, v))
     // }
 }
 // TODO: set_range_x and variants for each concrete range type (not requiring clone)
@@ -740,9 +837,67 @@ impl<K: Clone + Ord, V: Clone + Eq> RangeMap<K, V> {
 //     }
 // }
 
+// We can't just derive this automatically, because that would
+// expose irrelevant (and private) implementation details.
+// Instead implement it in the same way that the underlying BTreeMap does.
+impl<K: Debug, V: Debug> Debug for RangeMap<K, V>
+where
+    K: Ord + Clone,
+    V: Eq + Clone,
+{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_map().entries(self.iter()).finish()
+    }
+}
+
+impl<K: Hash, V: Hash> Hash for RangeMap<K, V> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        for elt in self {
+            elt.hash(state);
+        }
+    }
+}
+
 impl<K: Ord, V> Default for RangeMap<K, V> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl<K: PartialEq, V: PartialEq> PartialEq for RangeMap<K, V> {
+    fn eq(&self, other: &Self) -> bool {
+        self.len() == other.len() && self.iter().zip(other).all(|(a, b)| a == b)
+    }
+}
+impl<K: Eq, V: Eq> Eq for RangeMap<K, V> {}
+impl<K: PartialOrd + Ord, V: PartialOrd> PartialOrd for RangeMap<K, V> {
+    #[inline]
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.map.iter().partial_cmp(other.map.iter())
+    }
+}
+impl<K: Ord, V: Ord> Ord for RangeMap<K, V> {
+    #[inline]
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.map.iter().cmp(other.map.iter())
+    }
+}
+
+impl<K, V> Index<&K> for RangeMap<K, V>
+where
+    K: Clone + Ord,
+    V: Eq + Clone,
+{
+    type Output = V;
+
+    /// Returns a reference to the value corresponding to the supplied key.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the key is not present in the `RangeMap`.
+    #[inline]
+    fn index(&self, key: &K) -> &V {
+        self.get(key).expect("no entry found for key")
     }
 }
 
@@ -770,7 +925,10 @@ impl<K: Ord, V> MaybeMap<K, V> {
 impl<K, V> From<MaybeMap<K, V>> for Option<RangeMap<K, V>> {
     fn from(map: MaybeMap<K, V>) -> Self {
         if let MaybeMap::Map(map) = map {
-            Some(RangeMap(map))
+            Some(RangeMap {
+                map,
+                store: Vec::new(),
+            })
         } else {
             None
         }

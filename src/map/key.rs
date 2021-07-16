@@ -1,9 +1,5 @@
 use crate::range::{Range, StartBound};
-use core::{
-    fmt::Debug,
-    cmp::{max, min, Ordering},
-    ops::Bound,
-};
+use core::{cmp::Ordering, fmt::Debug, ops::Bound};
 
 /// Wrapper type for items the map (range should only ever be increasing)
 #[derive(Clone)]

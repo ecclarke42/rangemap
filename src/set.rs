@@ -1,8 +1,15 @@
-use core::fmt::{self, Debug};
-use core::ops::Range;
 use core::prelude::v1::*;
+use core::{
+    fmt::{self, Debug},
+    ops::RangeBounds,
+};
 
-use crate::RangeMap;
+use crate::{map::Key, range::StartBound, Range, RangeMap};
+
+pub mod iterators;
+pub mod ops;
+
+// TODO docs
 
 #[derive(Clone)]
 /// A set whose items are stored as (half-open) ranges bounded
@@ -12,43 +19,51 @@ use crate::RangeMap;
 ///
 /// [`RangeMap`]: struct.RangeMap.html
 pub struct RangeSet<T> {
-    rm: RangeMap<T, ()>,
+    map: RangeMap<T, ()>,
 }
 
-impl<T> Default for RangeSet<T>
-where
-    T: Ord + Clone,
-{
-    fn default() -> Self {
-        RangeSet::new()
-    }
-}
-
-impl<T> RangeSet<T>
-where
-    T: Ord + Clone,
-{
+impl<T> RangeSet<T> {
     /// Makes a new empty `RangeSet`.
-    pub fn new() -> Self {
+    pub fn new() -> Self
+    where
+        T: Clone + Ord,
+    {
         RangeSet {
-            rm: RangeMap::new(),
+            map: RangeMap::new(),
         }
     }
 
+    pub fn clear(&mut self) {
+        self.map.clear()
+    }
+
     /// Returns a reference to the range covering the given key, if any.
-    pub fn get(&self, value: &T) -> Option<&Range<T>> {
-        self.rm.get_key_value(value).map(|(range, _)| range)
+    pub fn get_range_for(&self, value: &T) -> Option<&Range<T>>
+    where
+        T: Clone + Ord,
+    {
+        self.map.get_key_value(value).map(|(range, _)| range)
     }
 
     /// Returns `true` if any range in the set covers the specified value.
-    pub fn contains(&self, value: &T) -> bool {
-        self.rm.contains_key(value)
+    pub fn contains(&self, value: &T) -> bool
+    where
+        T: Clone + Ord,
+    {
+        self.map.contains_point(value)
     }
 
-    /// Gets an ordered iterator over all ranges,
-    /// ordered by range.
-    pub fn iter(&self) -> impl Iterator<Item = &Range<T>> {
-        self.rm.iter().map(|(range, _v)| range)
+    pub fn is_disjoint(&self, other: &Self) -> bool {
+        self.intersection(other).next().is_none()
+    }
+
+    pub fn is_subset(&self, other: &Self) -> bool {
+        todo!()
+        // TODO
+    }
+
+    pub fn is_superset(&self, other: &Self) -> bool {
+        other.is_subset(self)
     }
 
     /// Insert a range into the set.
@@ -60,9 +75,24 @@ where
     /// # Panics
     ///
     /// Panics if range `start >= end`.
-    pub fn insert(&mut self, range: Range<T>) {
-        self.rm.insert(range, ());
+    pub fn insert<R>(&mut self, range: R) -> bool
+    where
+        R: RangeBounds<T>,
+        T: Clone + Ord,
+    {
+        // TODO: return options?
+        self.map.insert(range, ()).is_none()
     }
+
+    pub fn set<R>(&mut self, range: R)
+    where
+        R: RangeBounds<T>,
+        T: Clone + Ord,
+    {
+        self.map.set(range, ())
+    }
+
+    // Replace? Doesn't seem meaningful
 
     /// Removes a range from the set, if all or any of it was present.
     ///
@@ -73,21 +103,83 @@ where
     /// # Panics
     ///
     /// Panics if range `start >= end`.
-    pub fn remove(&mut self, range: Range<T>) {
-        self.rm.remove(range);
+    pub fn remove<R>(&mut self, range: R)
+    where
+        R: RangeBounds<T>,
+        T: Clone + Ord,
+    {
+        // TODO: return whether anything was removed? BTreeSet::remove() -> bool
+        self.map.clear_range(range);
     }
 
-    /// Gets an iterator over all the maximally-sized ranges
-    /// contained in `outer_range` that are not covered by
-    /// any range stored in the set.
-    ///
-    /// The iterator element type is `Range<T>`.
-    ///
-    /// NOTE: Calling `gaps` eagerly finds the first gap,
-    /// even if the iterator is never consumed.
-    pub fn gaps<'a>(&'a self, outer_range: &'a Range<T>) -> Gaps<'a, T> {
-        Gaps {
-            inner: self.rm.gaps(outer_range),
+    pub fn take<R>(&mut self, range: R) -> Self
+    where
+        R: RangeBounds<T>,
+        T: Clone + Ord,
+    {
+        if let Some(map) = self.map.remove_range(range) {
+            map.into()
+        } else {
+            Self::new()
+        }
+    }
+
+    pub fn retain<F>(&mut self, mut f: F)
+    where
+        T: Ord,
+        F: FnMut(&T) -> bool,
+    {
+        self.map.retain(|(k, _)| f(k))
+    }
+
+    pub fn append(&mut self, other: &mut Self)
+    where
+        T: Ord,
+    {
+        self.map.append(&mut other.map)
+    }
+
+    pub fn split_off(&mut self, at: StartBound<T>) -> Self {
+        Self {
+            map: self.map.split_off(at),
+        }
+    }
+
+    pub fn complement(&self) -> Self
+    where
+        T: Clone + Ord,
+    {
+        // RangeMap::iter_complement MUST return disjoint ranges,
+        // so we know we can just insert them without extra checking
+        self.map
+            .iter_complement()
+            .fold(Self::new(), |mut set, range| {
+                set.map.map.insert(Key(range), ());
+                set
+            })
+    }
+}
+
+impl<T> Default for RangeSet<T>
+where
+    T: Clone + Ord,
+{
+    fn default() -> Self {
+        RangeSet::new()
+    }
+}
+
+impl<K, V> From<RangeMap<K, V>> for RangeSet<K>
+where
+    K: Ord,
+{
+    fn from(map: RangeMap<K, V>) -> Self {
+        let RangeMap { map, store } = map;
+        RangeSet {
+            map: RangeMap {
+                map: map.into_iter().map(|(k, _)| (k, ())).collect(),
+                store,
+            },
         }
     }
 }
@@ -101,7 +193,7 @@ where
 //     type IntoIter = IntoIter<T>;
 //     fn into_iter(self) -> Self::IntoIter {
 //         IntoIter {
-//             inner: self.rm.into_iter(),
+//             inner: self.map.into_iter(),
 //         }
 //     }
 // }
@@ -126,25 +218,6 @@ where
         f.debug_set().entries(self.iter()).finish()
     }
 }
-
-pub struct Gaps<'a, T> {
-    inner: crate::map::iterators::Gaps<'a, T, ()>,
-}
-
-// `Gaps` is always fused. (See definition of `next` below.)
-impl<'a, T> core::iter::FusedIterator for Gaps<'a, T> where T: Ord + Clone {}
-
-impl<'a, T> Iterator for Gaps<'a, T>
-where
-    T: Ord + Clone,
-{
-    type Item = Range<T>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -196,7 +269,7 @@ mod tests {
         // 0 1 2 3 4 5 6 7 8 9
         // ◌ ◆-------------◇ ◌
         let outer_range = 1..8;
-        let mut gaps = range_set.gaps(&outer_range);
+        let mut gaps = range_set.gaps_in(&outer_range);
         // Should yield gaps at start, between items,
         // and at end.
         assert_eq!(gaps.next(), Some(1..3));

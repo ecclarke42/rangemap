@@ -1,12 +1,12 @@
-pub use core::ops::Bound;
+pub use core::ops::Bound::{self, *};
 use core::{
-    cmp::{max, min, Ordering},
+    cmp::Ordering::{self, *},
     fmt::Debug,
 };
 
 // TODO: how to express an empty range? just Option<Range<T>>?
 /// Monotonically increasing segment, for use in [`RangeMap`]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct Range<T> {
     pub(crate) start: StartBound<T>,
     pub(crate) end: EndBound<T>,
@@ -29,31 +29,60 @@ impl<T> StartBound<T> {
     }
     pub fn as_bound_inner_ref(&self) -> Bound<&T> {
         match &self.0 {
-            Bound::Included(x) => Bound::Included(x),
-            Bound::Excluded(x) => Bound::Excluded(x),
-            Bound::Unbounded => Bound::Unbounded,
+            Included(x) => Included(x),
+            Excluded(x) => Excluded(x),
+            Unbounded => Unbounded,
         }
     }
     pub fn value(&self) -> Option<&T> {
         match &self.0 {
-            Bound::Included(x) | Bound::Excluded(x) => Some(x),
-            Bound::Unbounded => None,
+            Included(x) | Excluded(x) => Some(x),
+            Unbounded => None,
         }
     }
     pub fn value_mut(&mut self) -> Option<&mut T> {
         match &mut self.0 {
-            Bound::Included(x) | Bound::Excluded(x) => Some(x),
-            Bound::Unbounded => None,
+            Included(x) | Excluded(x) => Some(x),
+            Unbounded => None,
         }
     }
+    pub fn before(&self) -> Option<EndBound<&T>> {
+        match &self.0 {
+            Excluded(t) => Some(EndBound(Included(t))),
+            Included(t) => Some(EndBound(Excluded(t))),
+            Unbounded => None,
+        }
+    }
+
+    /// PartialOrd workaround
+    pub fn cmp_end(&self, end: &EndBound<T>) -> Ordering
+    where
+        T: Ord,
+    {
+        match (&self.0, &end.0) {
+            (Unbounded, _) => Less,
+
+            // When a start and end are on the same point and both included,
+            // they CAN be equal
+            (Included(a), Included(b)) => a.cmp(b),
+
+            // When one or both are excluded at the same point, start will
+            // be greater, due to increasing ranges (i.e. it's pointing right)
+            (Included(a) | Excluded(a), Included(b) | Excluded(b)) => match a.cmp(b) {
+                Equal => Greater,
+                other => other,
+            },
+        }
+    }
+    // pub fn gt_end(&self)
 }
 
 impl<T: Clone> StartBound<&T> {
     pub fn cloned(&self) -> StartBound<T> {
         StartBound(match self.0 {
-            Bound::Excluded(t) => Bound::Excluded(t.clone()),
-            Bound::Included(t) => Bound::Included(t.clone()),
-            Bound::Unbounded => Bound::Unbounded,
+            Excluded(t) => Excluded(t.clone()),
+            Included(t) => Included(t.clone()),
+            Unbounded => Unbounded,
         })
     }
 }
@@ -69,23 +98,21 @@ impl<T: Ord> Ord for StartBound<T> {
         match (&self.0, &other.0) {
             // Unbounded is always less than bounded, for purposes of
             // comparison, Unbounded is equal to itself
-            (Bound::Unbounded, Bound::Unbounded) => Ordering::Equal,
-            (Bound::Unbounded, _) => Ordering::Less,
-            (_, Bound::Unbounded) => Ordering::Greater,
+            (Unbounded, Unbounded) => Ordering::Equal,
+            (Unbounded, _) => Ordering::Less,
+            (_, Unbounded) => Ordering::Greater,
 
             // Same bound type, just compare values
-            (Bound::Included(a), Bound::Included(b)) | (Bound::Excluded(a), Bound::Excluded(b)) => {
-                a.cmp(b)
-            }
+            (Included(a), Included(b)) | (Excluded(a), Excluded(b)) => a.cmp(b),
 
             // Different bound types
             // For the start of a strictly increasing range, included is less
             // than excluded (at the same value)
-            (Bound::Included(a), Bound::Excluded(b)) => match a.cmp(b) {
+            (Included(a), Excluded(b)) => match a.cmp(b) {
                 Ordering::Equal => Ordering::Less,
                 not_equal => not_equal,
             },
-            (Bound::Excluded(a), Bound::Included(b)) => match a.cmp(b) {
+            (Excluded(a), Included(b)) => match a.cmp(b) {
                 Ordering::Equal => Ordering::Greater,
                 not_equal => not_equal,
             },
@@ -115,31 +142,45 @@ impl<T> EndBound<T> {
     }
     pub fn as_bound_inner_ref(&self) -> Bound<&T> {
         match &self.0 {
-            Bound::Included(x) => Bound::Included(x),
-            Bound::Excluded(x) => Bound::Excluded(x),
-            Bound::Unbounded => Bound::Unbounded,
+            Included(x) => Included(x),
+            Excluded(x) => Excluded(x),
+            Unbounded => Unbounded,
         }
     }
     pub fn value(&self) -> Option<&T> {
         match &self.0 {
-            Bound::Included(x) | Bound::Excluded(x) => Some(x),
-            Bound::Unbounded => None,
+            Included(x) | Excluded(x) => Some(x),
+            Unbounded => None,
         }
     }
     pub fn value_mut(&mut self) -> Option<&mut T> {
         match &mut self.0 {
-            Bound::Included(x) | Bound::Excluded(x) => Some(x),
-            Bound::Unbounded => None,
+            Included(x) | Excluded(x) => Some(x),
+            Unbounded => None,
         }
+    }
+    pub fn after(&self) -> Option<StartBound<&T>> {
+        match &self.0 {
+            Excluded(t) => Some(StartBound(Included(t))),
+            Included(t) => Some(StartBound(Excluded(t))),
+            Unbounded => None,
+        }
+    }
+    /// PartialOrd workaround
+    pub fn cmp_start(&self, start: &StartBound<T>) -> Ordering
+    where
+        T: Ord,
+    {
+        start.cmp_end(self).reverse()
     }
 }
 
 impl<T: Clone> EndBound<&T> {
     pub fn cloned(&self) -> EndBound<T> {
         EndBound(match self.0 {
-            Bound::Excluded(t) => Bound::Excluded(t.clone()),
-            Bound::Included(t) => Bound::Included(t.clone()),
-            Bound::Unbounded => Bound::Unbounded,
+            Excluded(t) => Excluded(t.clone()),
+            Included(t) => Included(t.clone()),
+            Unbounded => Unbounded,
         })
     }
 }
@@ -154,23 +195,21 @@ impl<T: Ord> Ord for EndBound<T> {
         match (&self.0, &other.0) {
             // Unbounded is always greater than bounded, for purposes of
             // comparison, Unbounded is equal to itself
-            (Bound::Unbounded, Bound::Unbounded) => Ordering::Equal,
-            (Bound::Unbounded, _) => Ordering::Greater,
-            (_, Bound::Unbounded) => Ordering::Less,
+            (Unbounded, Unbounded) => Ordering::Equal,
+            (Unbounded, _) => Ordering::Greater,
+            (_, Unbounded) => Ordering::Less,
 
             // Same bound type, just compare values
-            (Bound::Included(a), Bound::Included(b)) | (Bound::Excluded(a), Bound::Excluded(b)) => {
-                a.cmp(b)
-            }
+            (Included(a), Included(b)) | (Excluded(a), Excluded(b)) => a.cmp(b),
 
             // Different bound types
             // For the end of a strictly increasing range, included is greater
             // than excluded (at the same value)
-            (Bound::Included(a), Bound::Excluded(b)) => match a.cmp(b) {
+            (Included(a), Excluded(b)) => match a.cmp(b) {
                 Ordering::Equal => Ordering::Greater,
                 not_equal => not_equal,
             },
-            (Bound::Excluded(a), Bound::Included(b)) => match a.cmp(b) {
+            (Excluded(a), Included(b)) => match a.cmp(b) {
                 Ordering::Equal => Ordering::Less,
                 not_equal => not_equal,
             },
@@ -209,17 +248,18 @@ impl<T> Range<T> {
     where
         T: Ord + Clone,
     {
+        // TODO: use start.cmp_end(end)?
         let start = bound_cloned(r.start_bound());
         let end = bound_cloned(r.end_bound());
         match (&start, &end) {
-            (Bound::Included(s), Bound::Included(e))
-            | (Bound::Included(s), Bound::Excluded(e))
-            | (Bound::Excluded(s), Bound::Included(e))
-            | (Bound::Excluded(s), Bound::Excluded(e)) => match s.cmp(e) {
+            (Included(s), Included(e))
+            | (Included(s), Excluded(e))
+            | (Excluded(s), Included(e))
+            | (Excluded(s), Excluded(e)) => match s.cmp(e) {
                 // If equal, coerce to included
                 Ordering::Equal => Self {
-                    start: StartBound(Bound::Included(s.clone())),
-                    end: EndBound(Bound::Included(e.clone())),
+                    start: StartBound(Included(s.clone())),
+                    end: EndBound(Included(e.clone())),
                 },
                 Ordering::Less => Self {
                     start: StartBound(start),
@@ -245,8 +285,8 @@ impl<T> Range<T> {
     // TODO: docs
     pub fn full() -> Self {
         Self {
-            start: StartBound(Bound::Unbounded),
-            end: EndBound(Bound::Unbounded),
+            start: StartBound(Unbounded),
+            end: EndBound(Unbounded),
         }
     }
 
@@ -256,8 +296,8 @@ impl<T> Range<T> {
         T: Clone,
     {
         Self {
-            start: StartBound(Bound::Included(value.clone())),
-            end: EndBound(Bound::Included(value)),
+            start: StartBound(Included(value.clone())),
+            end: EndBound(Included(value)),
         }
     }
 
@@ -266,8 +306,12 @@ impl<T> Range<T> {
     where
         T: Clone + core::ops::AddAssign,
     {
-        self.start.value_mut().map(|s| *s += by.clone());
-        self.end.value_mut().map(|e| *e += by);
+        if let Some(value) = self.start.value_mut() {
+            *value += by.clone();
+        }
+        if let Some(value) = self.end.value_mut() {
+            *value += by;
+        }
     }
 
     /// Shift the entire range to the left by some value (useful if using an
@@ -276,25 +320,34 @@ impl<T> Range<T> {
     where
         T: Clone + core::ops::SubAssign,
     {
-        self.start.value_mut().map(|s| *s -= by.clone());
-        self.end.value_mut().map(|e| *e -= by);
+        if let Some(value) = self.start.value_mut() {
+            *value -= by.clone();
+        }
+        if let Some(value) = self.end.value_mut() {
+            *value -= by;
+        }
     }
 
     pub fn shift_right(&mut self, by: T)
     where
         T: Clone + core::ops::AddAssign,
     {
-        self.start.value_mut().map(|s| *s += by.clone());
-        self.end.value_mut().map(|e| *e += by);
+        if let Some(value) = self.start.value_mut() {
+            *value += by.clone();
+        }
+        if let Some(value) = self.end.value_mut() {
+            *value += by;
+        }
     }
 
     /// Adjust the start of a range to a new lower bound.
-    pub fn adjust_left(&mut self, new_start: Bound<T>) -> Self {
+    pub fn adjust_left(&mut self, _new_start: Bound<T>) -> Self {
+        // TODO: panic if empty range
         todo!()
     }
 
     /// Adjust the end of a range to a new upper bound.
-    pub fn adjust_right(&mut self, new_end: Bound<T>) -> Self {
+    pub fn adjust_right(&mut self, _new_end: Bound<T>) -> Self {
         todo!()
     }
 
@@ -308,18 +361,10 @@ impl<T> Range<T> {
     }
 
     pub(crate) fn bound_before(&self) -> Option<EndBound<&T>> {
-        match &self.start.0 {
-            Bound::Excluded(t) => Some(EndBound(Bound::Included(t))),
-            Bound::Included(t) => Some(EndBound(Bound::Excluded(t))),
-            Bound::Unbounded => None,
-        }
+        self.start.before()
     }
     pub(crate) fn bound_after(&self) -> Option<StartBound<&T>> {
-        match &self.end.0 {
-            Bound::Excluded(t) => Some(StartBound(Bound::Included(t))),
-            Bound::Included(t) => Some(StartBound(Bound::Excluded(t))),
-            Bound::Unbounded => None,
-        }
+        self.end.after()
     }
 
     /// Check whether the range overlaps with another (i.e. the intersection is
@@ -333,15 +378,13 @@ impl<T> Range<T> {
             core::cmp::min(self.end.as_ref(), other.end.as_ref()).0,
         ) {
             // Both starts and/or both ends are unbounded, must overlap
-            (Bound::Unbounded, _) | (_, Bound::Unbounded) => true,
+            (Unbounded, _) | (_, Unbounded) => true,
 
             // If both are included, check less than or equal (overlap on same value)
-            (Bound::Included(a), Bound::Included(b)) => a <= b,
+            (Included(a), Included(b)) => a <= b,
 
             // Otherwise, no overlap on equal
-            (Bound::Included(a) | Bound::Excluded(a), Bound::Included(b) | Bound::Excluded(b)) => {
-                a < b
-            }
+            (Included(a) | Excluded(a), Included(b) | Excluded(b)) => a < b,
         }
     }
 
@@ -358,17 +401,15 @@ impl<T> Range<T> {
             core::cmp::min(self.end.as_ref(), other.end.as_ref()).0,
         ) {
             // Both starts and/or both ends are unbounded, must overlap
-            (Bound::Unbounded, _) | (_, Bound::Unbounded) => true,
+            (Unbounded, _) | (_, Unbounded) => true,
 
             // If both are excluded, ranges don't touch on equal
             // (there is a point gap when a==b)
-            (Bound::Excluded(a), Bound::Excluded(b)) => a < b,
+            (Excluded(a), Excluded(b)) => a < b,
 
             // If either are included, check less than or equal
             // (overlap on both included, touching when only one is)
-            (Bound::Included(a) | Bound::Excluded(a), Bound::Included(b) | Bound::Excluded(b)) => {
-                a <= b
-            }
+            (Included(a) | Excluded(a), Included(b) | Excluded(b)) => a <= b,
         }
     }
 
@@ -380,15 +421,15 @@ impl<T> Range<T> {
 // Utility, since it's messy to match everwhere
 fn bound_cloned<T: Clone>(b: Bound<&T>) -> Bound<T> {
     match b {
-        Bound::Unbounded => Bound::Unbounded,
-        Bound::Included(x) => Bound::Included(x.clone()),
-        Bound::Excluded(x) => Bound::Excluded(x.clone()),
+        Unbounded => Unbounded,
+        Included(x) => Included(x.clone()),
+        Excluded(x) => Excluded(x.clone()),
     }
 }
 fn bound_value<T>(b: Bound<T>) -> Option<T> {
     match b {
-        Bound::Unbounded => None,
-        Bound::Included(t) => Some(t),
-        Bound::Excluded(t) => Some(t),
+        Unbounded => None,
+        Included(t) => Some(t),
+        Excluded(t) => Some(t),
     }
 }

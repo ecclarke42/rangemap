@@ -1,10 +1,10 @@
-use crate::{key::Key, Range, RangeMap};
-
 use core::{
     fmt::{self, Debug},
-    iter::FusedIterator,
+    iter::{FromIterator, FusedIterator},
 };
 
+use super::Key;
+use crate::{Range, RangeMap};
 // TODO: all doctests
 
 impl<K, V> RangeMap<K, V> {
@@ -30,7 +30,7 @@ impl<K, V> RangeMap<K, V> {
     /// assert_eq!((*first_key, *first_value), (1, "a"));
     /// ```
     pub fn iter(&self) -> Iter<'_, K, V> {
-        Iter(self.0.iter())
+        Iter(self.map.iter())
     }
 
     // TODO: iter_in(): Iter but with a subset range
@@ -61,7 +61,7 @@ impl<K, V> RangeMap<K, V> {
     /// }
     /// ```
     pub fn iter_mut(&mut self) -> IterMut<'_, K, V> {
-        IterMut(self.0.iter_mut())
+        IterMut(self.map.iter_mut())
     }
 
     /// Gets an iterator over the range keys of the map (similar to `BTreeMap::keys()`)
@@ -148,7 +148,7 @@ impl<K, V> RangeMap<K, V> {
     /// assert_eq!(a.len(), 1);
     /// ```
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.map.len()
     }
 
     /// Returns `true` if the map contains no ranges.
@@ -166,10 +166,15 @@ impl<K, V> RangeMap<K, V> {
     /// assert!(!a.is_empty());
     /// ```
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.map.is_empty()
     }
 
     // fn range_bounds(&self) -> R?
+
+    pub fn iter_complement(&self) -> impl Iterator<Item = Range<K>> {
+        todo!()
+        // TODO: and type
+    }
 
     /// Gets an iterator over all maximally-sized gaps between ranges in the map
     ///
@@ -184,27 +189,66 @@ impl<K, V> RangeMap<K, V> {
     }
 
     // TODO: may simplify set_gaps()
-    // /// Gets an iterator over all maximally-sized gaps between ranges in the map,
-    // /// further bounded by an outer range
-    // ///
-    // /// NOTE: Unlike [`gaps`], the iterator here WILL include regions before and
-    // /// after those stored in the map, so long as they are included in the outer
-    // /// range
-    // pub fn gaps_in<R: core::ops::RangeBounds<K>>(&self, range: R) -> GapsIn<'_, K, V> {
-    //     GapsIn {
-    //         iter: self.iter(),
-    //         prev: None,
-    //         bounds: range,
-    //     }
-    // }
+    /// Gets an iterator over all maximally-sized gaps between ranges in the map,
+    /// further bounded by an outer range
+    ///
+    /// NOTE: Unlike [`gaps`], the iterator here WILL include regions before and
+    /// after those stored in the map, so long as they are included in the outer
+    /// range
+    pub fn gaps_in<R: core::ops::RangeBounds<K>>(&self, range: R) -> GapsIn<'_, K, V> {
+        GapsIn {
+            iter: self.iter(),
+            prev: None,
+            bounds: Range::from(range),
+        }
+    }
 }
 
+impl<K, V> IntoIterator for RangeMap<K, V> {
+    type Item = (Range<K>, V);
+    type IntoIter = IntoIter<K, V>;
+    fn into_iter(self) -> Self::IntoIter {
+        IntoIter(self.map.into_iter())
+    }
+}
 impl<'a, K, V> IntoIterator for &'a RangeMap<K, V> {
     type Item = (&'a Range<K>, &'a V);
     type IntoIter = Iter<'a, K, V>;
     fn into_iter(self) -> Iter<'a, K, V> {
         self.iter()
     }
+}
+
+impl<K: Ord, V> FromIterator<(K, V)> for RangeMap<K, V> {
+    fn from_iter<T: IntoIterator<Item = (K, V)>>(iter: T) -> Self {
+        let mut map = Self::new();
+        map.extend(iter);
+        map
+    }
+}
+
+impl<K: Ord, V> Extend<(K, V)> for RangeMap<K, V> {
+    #[inline]
+    fn extend<T: IntoIterator<Item = (K, V)>>(&mut self, iter: T) {
+        iter.into_iter().for_each(move |(k, v)| {
+            self.insert(k, v);
+        });
+    }
+
+    // #[inline]
+    // fn extend_one(&mut self, (k, v): (K, V)) {
+    //     self.insert(k, v);
+    // }
+}
+impl<'a, K: Ord + Copy, V: Copy> Extend<(&'a K, &'a V)> for RangeMap<K, V> {
+    fn extend<I: IntoIterator<Item = (&'a K, &'a V)>>(&mut self, iter: I) {
+        self.extend(iter.into_iter().map(|(&key, &value)| (key, value)));
+    }
+
+    // #[inline]
+    // fn extend_one(&mut self, (&k, &v): (&'a K, &'a V)) {
+    //     self.insert(k, v);
+    // }
 }
 
 /// An iterator over the entries of a `RangeMap`.
@@ -322,14 +366,6 @@ impl<K, V> FusedIterator for IterMut<'_, K, V> {}
 //     }
 // }
 
-// TODO: Move to Iterators
-impl<K, V> IntoIterator for RangeMap<K, V> {
-    type Item = (Range<K>, V);
-    type IntoIter = IntoIter<K, V>;
-    fn into_iter(self) -> Self::IntoIter {
-        IntoIter(self.0.into_iter())
-    }
-}
 /// An owning iterator over the entries of a `RangeMap`.
 ///
 /// This `struct` is created by the [`into_iter`] method on [`RangeMap`]
@@ -337,11 +373,11 @@ impl<K, V> IntoIterator for RangeMap<K, V> {
 ///
 /// [`into_iter`]: IntoIterator::into_iter
 pub struct IntoIter<K, V>(alloc::collections::btree_map::IntoIter<Key<K>, V>);
-// impl<K: Debug, V: Debug> Debug for IntoIter<K, V> {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         f.debug_list().entries(self.iter()).finish()
-//     }
-// }
+impl<K: Debug, V: Debug> Debug for IntoIter<K, V> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
 impl<K, V> Iterator for IntoIter<K, V> {
     type Item = (Range<K>, V);
     fn next(&mut self) -> Option<(Range<K>, V)> {
@@ -375,14 +411,12 @@ impl<K, V> FusedIterator for IntoIter<K, V> {}
 /// documentation for more.
 ///
 /// [`keys`]: RangeMap::keys
-#[derive(Clone)]
 pub struct Ranges<'a, K: 'a, V: 'a>(Iter<'a, K, V>);
-// TODO
-// impl<K: Debug, V> Debug for Keys<'_, K, V> {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         f.debug_list().entries(self.clone()).finish()
-//     }
-// }
+impl<K: Debug, V> Debug for Ranges<'_, K, V> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list().entries(self.clone()).finish()
+    }
+}
 impl<'a, K, V> Iterator for Ranges<'a, K, V> {
     type Item = &'a Range<K>;
     fn next(&mut self) -> Option<&'a Range<K>> {
@@ -412,6 +446,12 @@ impl<K, V> ExactSizeIterator for Ranges<'_, K, V> {
     }
 }
 impl<K, V> FusedIterator for Ranges<'_, K, V> {}
+
+impl<K, V> Clone for Ranges<'_, K, V> {
+    fn clone(&self) -> Self {
+        Ranges(self.0.clone())
+    }
+}
 
 /// An iterator over the values of a `RangeMap`.
 ///
@@ -542,3 +582,60 @@ where
 }
 
 impl<K: Clone + Ord, V> FusedIterator for Gaps<'_, K, V> {}
+
+pub struct GapsIn<'a, K, V> {
+    iter: Iter<'a, K, V>,
+    prev: Option<&'a Range<K>>,
+    bounds: Range<K>,
+}
+
+// TODO: document panics in Gaps
+
+impl<'a, K, V> Iterator for GapsIn<'a, K, V>
+where
+    K: Ord + Clone,
+{
+    type Item = Range<K>;
+    fn next(&mut self) -> Option<Self::Item> {
+        todo!();
+        // TODO
+
+        if let Some((next, _)) = self.iter.next() {
+            if let Some(prev) = self.prev {
+                // Get the adjacent bound to the end of the previous range
+
+                let start = prev.bound_after()?.cloned(); // If none, no more gaps (this extends forwards to infinity)
+                let end = next
+                    .bound_before()
+                    .expect("Unbounded internal range in RangeMap")
+                    .cloned();
+                self.prev = Some(next);
+                Some(Range { start, end })
+            } else {
+                // No previous bound means first gap
+
+                // Get the adjacent bound to the end of the first range
+                let start = next.bound_after()?.cloned(); // If none, no more gaps (this extends forwards to infinity)
+
+                // Check if we have another range
+                if let Some((next, _)) = self.iter.next() {
+                    // Store the end of the next segment for next iteration
+                    let end = next
+                        .bound_before()
+                        .expect("Unbounded internal range in RangeMap")
+                        .cloned();
+
+                    self.prev = Some(next);
+                    Some(Range { start, end })
+                } else {
+                    // Only one item (no gaps)
+                    None
+                }
+            }
+        } else {
+            None
+        }
+    }
+}
+
+impl<K: Clone + Ord, V> FusedIterator for GapsIn<'_, K, V> {}

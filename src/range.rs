@@ -1,7 +1,8 @@
-pub use core::ops::Bound::{self, *};
+use crate::bounds::{EndBound, StartBound};
 use core::{
-    cmp::Ordering::{self, *},
+    cmp::Ordering,
     fmt::Debug,
+    ops::Bound::{self, *},
 };
 
 // TODO: how to express an empty range? just Option<Range<T>>?
@@ -10,211 +11,6 @@ use core::{
 pub struct Range<T> {
     pub(crate) start: StartBound<T>,
     pub(crate) end: EndBound<T>,
-}
-
-/// Directional bound for the start of a monotonically increasing segement
-#[derive(Clone, Copy, Hash, PartialEq, Eq)]
-pub(crate) struct StartBound<T>(pub(crate) Bound<T>);
-impl<T: Debug> Debug for StartBound<T> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        self.0.fmt(f)
-    }
-}
-impl<T> StartBound<T> {
-    pub fn as_ref(&self) -> StartBound<&T> {
-        StartBound(self.as_bound_inner_ref())
-    }
-    pub fn as_bound(&self) -> &Bound<T> {
-        &self.0
-    }
-    pub fn as_bound_inner_ref(&self) -> Bound<&T> {
-        match &self.0 {
-            Included(x) => Included(x),
-            Excluded(x) => Excluded(x),
-            Unbounded => Unbounded,
-        }
-    }
-    pub fn value(&self) -> Option<&T> {
-        match &self.0 {
-            Included(x) | Excluded(x) => Some(x),
-            Unbounded => None,
-        }
-    }
-    pub fn value_mut(&mut self) -> Option<&mut T> {
-        match &mut self.0 {
-            Included(x) | Excluded(x) => Some(x),
-            Unbounded => None,
-        }
-    }
-    pub fn before(&self) -> Option<EndBound<&T>> {
-        match &self.0 {
-            Excluded(t) => Some(EndBound(Included(t))),
-            Included(t) => Some(EndBound(Excluded(t))),
-            Unbounded => None,
-        }
-    }
-
-    /// PartialOrd workaround
-    pub fn cmp_end(&self, end: &EndBound<T>) -> Ordering
-    where
-        T: Ord,
-    {
-        match (&self.0, &end.0) {
-            (Unbounded, _) => Less,
-
-            // When a start and end are on the same point and both included,
-            // they CAN be equal
-            (Included(a), Included(b)) => a.cmp(b),
-
-            // When one or both are excluded at the same point, start will
-            // be greater, due to increasing ranges (i.e. it's pointing right)
-            (Included(a) | Excluded(a), Included(b) | Excluded(b)) => match a.cmp(b) {
-                Equal => Greater,
-                other => other,
-            },
-        }
-    }
-    // pub fn gt_end(&self)
-}
-
-impl<T: Clone> StartBound<&T> {
-    pub fn cloned(&self) -> StartBound<T> {
-        StartBound(match self.0 {
-            Excluded(t) => Excluded(t.clone()),
-            Included(t) => Included(t.clone()),
-            Unbounded => Unbounded,
-        })
-    }
-}
-
-impl<T: Ord> PartialOrd for StartBound<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl<T: Ord> Ord for StartBound<T> {
-    fn cmp(&self, other: &StartBound<T>) -> Ordering {
-        match (&self.0, &other.0) {
-            // Unbounded is always less than bounded, for purposes of
-            // comparison, Unbounded is equal to itself
-            (Unbounded, Unbounded) => Ordering::Equal,
-            (Unbounded, _) => Ordering::Less,
-            (_, Unbounded) => Ordering::Greater,
-
-            // Same bound type, just compare values
-            (Included(a), Included(b)) | (Excluded(a), Excluded(b)) => a.cmp(b),
-
-            // Different bound types
-            // For the start of a strictly increasing range, included is less
-            // than excluded (at the same value)
-            (Included(a), Excluded(b)) => match a.cmp(b) {
-                Ordering::Equal => Ordering::Less,
-                not_equal => not_equal,
-            },
-            (Excluded(a), Included(b)) => match a.cmp(b) {
-                Ordering::Equal => Ordering::Greater,
-                not_equal => not_equal,
-            },
-        }
-    }
-}
-
-/// Directional bound for the end of a monotonically increasing segement
-#[derive(Clone, Copy, Hash, PartialEq, Eq)]
-pub(crate) struct EndBound<T>(pub(crate) Bound<T>);
-impl<T: Debug> Debug for EndBound<T> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        self.0.fmt(f)
-    }
-}
-impl<T> From<EndBound<T>> for Bound<T> {
-    fn from(b: EndBound<T>) -> Self {
-        b.0
-    }
-}
-impl<T> EndBound<T> {
-    pub fn as_ref(&self) -> EndBound<&T> {
-        EndBound(self.as_bound_inner_ref())
-    }
-    pub fn as_bound(&self) -> &Bound<T> {
-        &self.0
-    }
-    pub fn as_bound_inner_ref(&self) -> Bound<&T> {
-        match &self.0 {
-            Included(x) => Included(x),
-            Excluded(x) => Excluded(x),
-            Unbounded => Unbounded,
-        }
-    }
-    pub fn value(&self) -> Option<&T> {
-        match &self.0 {
-            Included(x) | Excluded(x) => Some(x),
-            Unbounded => None,
-        }
-    }
-    pub fn value_mut(&mut self) -> Option<&mut T> {
-        match &mut self.0 {
-            Included(x) | Excluded(x) => Some(x),
-            Unbounded => None,
-        }
-    }
-    pub fn after(&self) -> Option<StartBound<&T>> {
-        match &self.0 {
-            Excluded(t) => Some(StartBound(Included(t))),
-            Included(t) => Some(StartBound(Excluded(t))),
-            Unbounded => None,
-        }
-    }
-    /// PartialOrd workaround
-    pub fn cmp_start(&self, start: &StartBound<T>) -> Ordering
-    where
-        T: Ord,
-    {
-        start.cmp_end(self).reverse()
-    }
-}
-
-impl<T: Clone> EndBound<&T> {
-    pub fn cloned(&self) -> EndBound<T> {
-        EndBound(match self.0 {
-            Excluded(t) => Excluded(t.clone()),
-            Included(t) => Included(t.clone()),
-            Unbounded => Unbounded,
-        })
-    }
-}
-
-impl<T: Ord> PartialOrd for EndBound<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-impl<T: Ord> Ord for EndBound<T> {
-    fn cmp(&self, other: &EndBound<T>) -> Ordering {
-        match (&self.0, &other.0) {
-            // Unbounded is always greater than bounded, for purposes of
-            // comparison, Unbounded is equal to itself
-            (Unbounded, Unbounded) => Ordering::Equal,
-            (Unbounded, _) => Ordering::Greater,
-            (_, Unbounded) => Ordering::Less,
-
-            // Same bound type, just compare values
-            (Included(a), Included(b)) | (Excluded(a), Excluded(b)) => a.cmp(b),
-
-            // Different bound types
-            // For the end of a strictly increasing range, included is greater
-            // than excluded (at the same value)
-            (Included(a), Excluded(b)) => match a.cmp(b) {
-                Ordering::Equal => Ordering::Greater,
-                not_equal => not_equal,
-            },
-            (Excluded(a), Included(b)) => match a.cmp(b) {
-                Ordering::Equal => Ordering::Less,
-                not_equal => not_equal,
-            },
-        }
-    }
 }
 
 impl<T> core::ops::RangeBounds<T> for Range<T> {
@@ -226,7 +22,11 @@ impl<T> core::ops::RangeBounds<T> for Range<T> {
     }
 }
 
-// TODO: Range From's
+// impl<T, R: core::ops::RangeBounds<T>> From<R> for Range<T> {
+//     fn from(r: R) -> Self {
+
+//     }
+// }
 
 impl<T> Range<T> {
     /// Construct a new segment from range bounds
@@ -340,16 +140,17 @@ impl<T> Range<T> {
         }
     }
 
-    /// Adjust the start of a range to a new lower bound.
-    pub fn adjust_left(&mut self, _new_start: Bound<T>) -> Self {
-        // TODO: panic if empty range
-        todo!()
-    }
+    // TODO
+    // /// Adjust the start of a range to a new lower bound.
+    // pub fn adjust_left(&mut self, _new_start: Bound<T>) -> Self {
+    //     // TODO: panic if empty range
+    //     todo!()
+    // }
 
-    /// Adjust the end of a range to a new upper bound.
-    pub fn adjust_right(&mut self, _new_end: Bound<T>) -> Self {
-        todo!()
-    }
+    // /// Adjust the end of a range to a new upper bound.
+    // pub fn adjust_right(&mut self, _new_end: Bound<T>) -> Self {
+    //     todo!()
+    // }
 
     /// Converts from `&Range<T>` to `Range<&T>`.
     #[inline]
@@ -363,6 +164,7 @@ impl<T> Range<T> {
     pub(crate) fn bound_before(&self) -> Option<EndBound<&T>> {
         self.start.before()
     }
+    // pub(crate) fn into_bound_after
     pub(crate) fn bound_after(&self) -> Option<StartBound<&T>> {
         self.end.after()
     }
@@ -418,6 +220,15 @@ impl<T> Range<T> {
     }
 }
 
+impl<'a, T> Range<&'a T> {
+    pub(crate) fn borrow_bound_before(&self) -> Option<EndBound<&'a T>> {
+        self.start.borrow_before()
+    }
+    pub(crate) fn borrow_bound_after(&self) -> Option<StartBound<&'a T>> {
+        self.end.borrow_after()
+    }
+}
+
 // Utility, since it's messy to match everwhere
 fn bound_cloned<T: Clone>(b: Bound<&T>) -> Bound<T> {
     match b {
@@ -431,5 +242,139 @@ fn bound_value<T>(b: Bound<T>) -> Option<T> {
         Unbounded => None,
         Included(t) => Some(t),
         Excluded(t) => Some(t),
+    }
+}
+
+// TODO: add to above
+// TODO: non-borrowed?
+// impl<T> Range<&T> {
+//     fn difference(&self, other: &Self) -> alloc::vec::Vec<Range<&T>> {
+
+//         // If `range` is still fully before `other`, use it (and
+//         // hold on to `other`)
+//         if self.end.cmp_start(&other.start).is_gt() {
+//             prev_other.insert(other);
+//             return Some(range);
+//         }
+
+//         // If `range` is fully after `other`, grab the next
+//         // `other` (and loop again)
+//         if range.start.cmp_end(&other.end).is_gt() {
+//             continue;
+//         }
+
+//         // Otherwise, we have some overlap
+//         //
+//         // The `borrow_bound_x().unwrap()` calls below should be
+//         // fine, since they only occur where the match precludes
+//         // an unbounded start/end.
+//         match (range.start.cmp(&other.start), range.end.cmp(&other.end)) {
+//             // Partial overlap, but `left` doesn't extend beyond `right`
+//             // We can use part of `left` and forget the rest
+//             (Less, Less) => {
+//                 range.end = other.borrow_bound_before().unwrap();
+//                 prev_other.insert(other);
+//                 return Some(range);
+//             }
+
+//             // Partial overlap where `left` extends just to the
+//             // end of `right` (don't save `right`)
+//             (Less, Equal) => {
+//                 range.end = other.borrow_bound_before().unwrap();
+//                 return Some(range);
+//             }
+
+//             // Fully overlapped, but with some excess `right`
+//             // Keep it and loop again with a new `left`.
+//             (Greater | Equal, Less) => {
+//                 range = self_iter.next()?.as_ref();
+//                 prev_other.insert(other);
+//             }
+
+//             // Fully overlapped but with no more `right`, loop
+//             // again with a new one of each
+//             (Greater | Equal, Equal) => {
+//                 range = self_iter.next()?.as_ref();
+//                 continue;
+//             }
+
+//             // Partial overlap, but some `left` past `right`
+//             // Keep part of `left` and look for a new `right`
+//             (Greater | Equal, Greater) => {
+//                 range.start = other.borrow_bound_after().unwrap();
+//                 continue;
+//             }
+
+//             // `left` extends beyond `right` in both directions.
+//             // Use the part of `left` before `right` and store
+//             // the part after.
+//             (Less, Greater) => {
+//                 prev_self.insert(Range {
+//                     start: other.borrow_bound_after().unwrap(),
+//                     end: range.end.clone(),
+//                 });
+//                 range.end = other.borrow_bound_before().unwrap();
+//                 return Some(range);
+//             }
+//         }
+//     }
+// }
+
+impl<T> PartialEq<core::ops::RangeFull> for Range<T> {
+    fn eq(&self, _other: &core::ops::RangeFull) -> bool {
+        matches!(
+            (&self.start, &self.end),
+            (StartBound(Unbounded), EndBound(Unbounded)),
+        )
+    }
+}
+
+impl<T: Ord> PartialEq<core::ops::Range<T>> for Range<T> {
+    fn eq(&self, other: &core::ops::Range<T>) -> bool {
+        if let (StartBound(Included(start)), EndBound(Excluded(end))) = (&self.start, &self.end) {
+            other.start.eq(start) && other.end.eq(end)
+        } else {
+            false
+        }
+    }
+}
+
+impl<T: Ord> PartialEq<core::ops::RangeFrom<T>> for Range<T> {
+    fn eq(&self, other: &core::ops::RangeFrom<T>) -> bool {
+        if let (StartBound(Included(start)), EndBound(Unbounded)) = (&self.start, &self.end) {
+            other.start.eq(start)
+        } else {
+            false
+        }
+    }
+}
+
+impl<T: Ord> PartialEq<core::ops::RangeTo<T>> for Range<T> {
+    fn eq(&self, other: &core::ops::RangeTo<T>) -> bool {
+        if let (StartBound(Unbounded), EndBound(Excluded(end))) = (&self.start, &self.end) {
+            other.end.eq(end)
+        } else {
+            false
+        }
+    }
+}
+
+impl<T: Ord> PartialEq<core::ops::RangeInclusive<T>> for Range<T> {
+    fn eq(&self, other: &core::ops::RangeInclusive<T>) -> bool {
+        if let (StartBound(Included(start)), EndBound(Included(end))) = (&self.start, &self.end) {
+            other.start().eq(start) && other.end().eq(end)
+        } else {
+            false
+        }
+    }
+}
+
+impl<T: Ord> PartialEq<core::ops::RangeToInclusive<T>> for Range<T> {
+    fn eq(&self, other: &core::ops::RangeToInclusive<T>) -> bool {
+        if let (StartBound(Unbounded), EndBound(Included(end))) = (&self.start, &self.end) {
+            other.end.eq(end)
+        } else {
+            false
+        }
     }
 }

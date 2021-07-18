@@ -117,6 +117,7 @@ book for general information about operating without the standard library.
 #![no_std]
 extern crate alloc;
 
+mod bounds;
 pub mod map;
 pub mod range;
 pub mod set;
@@ -125,7 +126,7 @@ pub mod set;
 // mod stupid_range_map;
 
 pub use map::RangeMap;
-pub use range::{Bound, Range};
+pub use range::{Range};
 pub use set::RangeSet;
 
 // Doc tests for README.

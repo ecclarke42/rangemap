@@ -1,11 +1,11 @@
 use core::{
     cmp::Ordering::*,
     fmt::{self, Debug},
-    iter::{FromIterator, FusedIterator, Peekable},
+    iter::{FromIterator, FusedIterator},
     ops::RangeBounds,
 };
 
-use crate::{Range, RangeMap, RangeSet};
+use crate::{Range, RangeSet};
 // TODO: all doctests
 
 /// See [`alloc::collections::btree_set::ITER_PERFORMANCE_TIPPING_SIZE_DIFF`]
@@ -64,18 +64,21 @@ impl<T> RangeSet<T> {
         {
             // If both ranges are bounded and overlap, perform a difference
             if self_range.overlaps(&other_range) {
-                // TODO: Use the tipping point, but only for the overlapping region?
-                if self.len() <= (other.len() / ITER_PERFORMANCE_TIPPING_SIZE_DIFF) {
-                    return Difference(DifferenceInner::Search {
-                        self_iter: self.iter(),
-                        other_set: other,
-                    });
-                } else {
-                    return Difference(DifferenceInner::Stitch {
-                        self_iter: self.iter().peekable(),
-                        other_iter: other.iter().peekable(),
-                    });
-                }
+                // // TODO: Use the tipping point, but only for the overlapping region?
+                // if self.len() <= (other.len() / ITER_PERFORMANCE_TIPPING_SIZE_DIFF) {
+                //     return Difference(DifferenceInner::Search {
+                //         iter: self.iter(),
+                //         prev: None,
+                //         other,
+                //     });
+                // } else {
+                return Difference(DifferenceInner::Stitch {
+                    self_iter: self.iter(),
+                    prev_self: None,
+                    other_iter: other.iter(),
+                    prev_other: None,
+                });
+                // }
             }
         }
 
@@ -85,7 +88,12 @@ impl<T> RangeSet<T> {
     }
 
     pub fn symmetric_difference<'a>(&'a self, other: &'a Self) -> SymmetricDifference<'a, T> {
-        todo!()
+        SymmetricDifference {
+            iter_a: self.iter(),
+            prev_a: None,
+            iter_b: other.iter(),
+            prev_b: None,
+        }
     }
 
     pub fn intersection<'a>(&'a self, other: &'a Self) -> Intersection<'a, T> {
@@ -97,42 +105,65 @@ impl<T> RangeSet<T> {
     }
 
     // TODO: names?
-    pub fn iter_complement(&self) -> impl Iterator<Item = Range<T>> {
-        self.map.iter_complement()
-    }
-    pub fn gaps(&self) -> impl Iterator<Item = Range<T>>
-    where
-        T: Ord + Clone,
-    {
-        self.map.gaps()
-    }
-    /// Gets an iterator over all the maximally-sized ranges
-    /// contained in `outer_range` that are not covered by
-    /// any range stored in the set.
-    ///
-    /// The iterator element type is `Range<T>`.
-    ///
-    /// NOTE: Calling `gaps` eagerly finds the first gap,
-    /// even if the iterator is never consumed.
-    pub fn gaps_in<R: RangeBounds<T>>(&self, outer_range: R) -> impl Iterator<Item = Range<T>> {
-        self.map.gaps_in(outer_range).map(|(k, v)| k)
-    }
+    // pub fn iter_complement(&self) -> impl Iterator<Item = Range<T>> {
+    //     self.map.iter_complement()
+    // }
+    // pub fn gaps(&self) -> impl Iterator<Item = Range<T>>
+    // where
+    //     T: Ord + Clone,
+    // {
+    //     self.map.gaps()
+    // }
+
+    // /// Gets an iterator over all the maximally-sized ranges
+    // /// contained in `outer_range` that are not covered by
+    // /// any range stored in the set.
+    // ///
+    // /// The iterator element type is `Range<T>`.
+    // ///
+    // /// NOTE: Calling `gaps` eagerly finds the first gap,
+    // /// even if the iterator is never consumed.
+    // pub fn gaps_in<R: RangeBounds<T>>(&self, outer_range: R) -> impl Iterator<Item = Range<T>> {
+    //     self.map.gaps_in(outer_range).map(|(k, v)| k)
+    // }
+
+    // TODO
+    // pub fn extend_into_gaps(&mut self)
 }
 
-impl<T: Clone + Ord> FromIterator<T> for RangeSet<T> {
-    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> RangeSet<T> {
+// impl<T: Clone + Ord> FromIterator<Range<T>> for RangeSet<T> {
+//     fn from_iter<I: IntoIterator<Item = Range<T>>>(iter: I) -> RangeSet<T> {
+//         let mut set = Self::new();
+//         set.extend(iter);
+//         set
+//     }
+// }
+
+/// TODO: document use of Clone, and set ordering
+impl<Item: RangeBounds<T>, T: Clone + Ord> FromIterator<Item> for RangeSet<T> {
+    fn from_iter<I: IntoIterator<Item = Item>>(iter: I) -> Self {
         let mut set = Self::new();
-        set.extend(iter);
+        for item in iter {
+            set.set(item);
+        }
         set
     }
 }
 
-impl<T: Clone + Ord> Extend<T> for RangeSet<T> {
+impl<T: Clone + Ord> Extend<Range<T>> for RangeSet<T> {
+    /// Insert all the items from `iter` into `self`.
+    ///
+    /// **NOTE**: Inserted items will overwrite existing ranges in `self` if
+    /// they overlap. If you don't want to overwrite existing ranges, use
+    /// [`extend_into_gaps`].
+    ///
+    /// Clone is required for insertion, since we can't guarantee elements in `iter`
+    /// are ordered or non-overlapping, so ranges may need to be split.
     #[inline]
-    fn extend<Iter: IntoIterator<Item = T>>(&mut self, iter: Iter) {
+    fn extend<Iter: IntoIterator<Item = Range<T>>>(&mut self, iter: Iter) {
         // self.map.extend(iter.into_iter().map(|t| (t, ())))
-        iter.into_iter().for_each(move |t| {
-            self.insert(t);
+        iter.into_iter().for_each(move |range| {
+            self.set(range);
         });
     }
 
@@ -142,8 +173,8 @@ impl<T: Clone + Ord> Extend<T> for RangeSet<T> {
     // }
 }
 
-impl<'a, T: 'a + Ord + Copy> Extend<&'a T> for RangeSet<T> {
-    fn extend<I: IntoIterator<Item = &'a T>>(&mut self, iter: I) {
+impl<'a, T: 'a + Ord + Copy> Extend<&'a Range<T>> for RangeSet<T> {
+    fn extend<I: IntoIterator<Item = &'a Range<T>>>(&mut self, iter: I) {
         self.extend(iter.into_iter().cloned());
     }
 
@@ -206,105 +237,175 @@ impl<T: fmt::Debug> fmt::Debug for IntoIter<T> {
         self.0.fmt(f)
     }
 }
-// Range?
 
-#[derive(Clone)]
-pub struct Difference<'a, T: Clone + Ord>(DifferenceInner<'a, T>);
-#[derive(Debug, Clone)]
-enum DifferenceInner<'a, T: 'a + Clone + Ord> {
+// TODO: Implement Difference Search method
+
+pub struct Difference<'a, T: Ord>(DifferenceInner<'a, T>);
+#[derive(Debug)]
+enum DifferenceInner<'a, T: 'a + Ord> {
+    /// Iterate all of `self` and some of `other`, spotting matches along the
+    /// way. The std lib uses Peekable here, which doesn't quite work for us,
+    /// since we need to store a possibly split range (not the original range)
     Stitch {
-        // iterate all of `self` and some of `other`, spotting matches along the way
-        self_iter: Peekable<Iter<'a, T>>,
-        other_iter: Peekable<Iter<'a, T>>,
-    },
-    // Trusting the stdlib knows what it's doing here...
-    // TODO: bench if Search mode is useful at all
-    Search {
-        // iterate `self`, look up in `other`
         self_iter: Iter<'a, T>,
-        other_set: &'a RangeSet<T>,
+        prev_self: Option<Range<&'a T>>,
+
+        other_iter: Iter<'a, T>,
+        prev_other: Option<Range<&'a T>>,
     },
-    Iterate(Iter<'a, T>), // simply produce all values in `self`
+
+    // /// If other is large, we search through it instead of iterating
+    // /// Trusting the stdlib knows what it's doing here...
+    // ///
+    // /// TODO: bench if Search mode is useful at all. Defaulting to include it
+    // /// because stdlib does.
+    // Search {
+    //     iter: Iter<'a, T>,
+    //     other: &'a RangeSet<T>,
+
+    //     /// Stored item, along with references to any overlapping ranges already
+    //     /// queried (since they'll be immediately needed in the next iteration)
+    //     prev: Option<(Range<&'a T>, alloc::vec::Vec<&'a Range<T>>)>,
+    // },
+    /// For non-overlapping sets, just produce everything in self
+    ///
+    /// This is also the case if `self` or `other` is empty
+    Iterate(Iter<'a, T>),
 }
 
-impl<T: Clone + Ord + fmt::Debug> fmt::Debug for Difference<'_, T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("Difference").field(&self.0).finish()
-    }
-}
+// impl<T: Ord + fmt::Debug> fmt::Debug for Difference<'_, T> {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         f.debug_tuple("Difference").field(&self.0.clone()).finish()
+//     }
+// }
 
-impl<'a, T: Clone + Ord> Iterator for Difference<'a, T> {
-    type Item = &'a Range<T>;
+// TODO: document why Range<&'a T> instead of &'a Range<T>
+// TODO: combine Stitch and Search inner loop logic?
+impl<'a, T: Ord> Iterator for Difference<'a, T> {
+    type Item = Range<&'a T>;
 
-    fn next(&mut self) -> Option<&'a Range<T>> {
+    fn next(&mut self) -> Option<Range<&'a T>> {
         match &mut self.0 {
+            DifferenceInner::Iterate(iter) => iter.next().map(|x| x.as_ref()),
             DifferenceInner::Stitch {
                 self_iter,
+                prev_self,
+
                 other_iter,
+                prev_other,
             } => {
-                // If no more in self, we're done
-                let mut self_next = self_iter.peek()?;
+                // If we stored a previous range, it's a split (so take it)
+                // If there aren't any left, we're finished
+                let mut range = prev_self
+                    .take()
+                    .or_else(|| self_iter.next().map(|x| x.as_ref()))?;
 
-                // Look for items in other until we run out
+                // Look for items in `other` until we run out
                 loop {
-                    if let Some(other_next) = other_iter.peek() {
-                        // match (self_next.start.cmp(other_next.start), self_next.end.cmp(other_next.end)) {
-                        //     ()
-                        // }
-
-                        // If start is still before other, use it
-                        if self_next.end.cmp_start(&other_next.start).is_gt() {
-                            return self_iter.next();
+                    if let Some(other) = prev_other
+                        .take()
+                        .or_else(|| other_iter.next().map(|x| x.as_ref()))
+                    {
+                        // If `range` is still fully before `other`, use it (and
+                        // hold on to `other`)
+                        if range.end.cmp_start(&other.start).is_gt() {
+                            prev_other.insert(other);
+                            return Some(range);
                         }
 
-                        // If self has passed other, grab the next other]
-                        if self_next.start.cmp_end(&other_next.end).is_gt() {
-                            other_iter.next();
+                        // If `range` is fully after `other`, grab the next
+                        // `other` (and loop again)
+                        if range.start.cmp_end(&other.end).is_gt() {
                             continue;
                         }
 
                         // Otherwise, we have some overlap
-                        // If `other_next` ends before the end of start, we'll need to loop
-                        match self_next.end.cmp(&other_next.end) {
-
-                            // More of `other_next` left, leave it around for next iteration
-                            Less => {
-
+                        //
+                        // The `borrow_bound_x().unwrap()` calls below should be
+                        // fine, since they only occur where the match precludes
+                        // an unbounded start/end.
+                        match (range.start.cmp(&other.start), range.end.cmp(&other.end)) {
+                            // Partial overlap, but `left` doesn't extend beyond `right`
+                            // We can use part of `left` and forget the rest
+                            (Less, Less) => {
+                                range.end = other.borrow_bound_before().unwrap();
+                                prev_other.insert(other);
+                                return Some(range);
                             }
 
-                            // Self and other end at the same place, pop both
-                            Equal => {
-
+                            // Partial overlap where `left` extends just to the
+                            // end of `right` (don't save `right`)
+                            (Less, Equal) => {
+                                range.end = other.borrow_bound_before().unwrap();
+                                return Some(range);
                             }
 
-                            // Self extends past other, so keep it around for the next iteration
-                            Greater => {
-
-                                // TODO: need to implement own Peekable type...
-                                // We need to store PART of the peeked range, but not all of it (since we will return part of it here)
-
+                            // Fully overlapped, but with some excess `right`
+                            // Keep it and loop again with a new `left`.
+                            (Greater | Equal, Less) => {
+                                range = self_iter.next()?.as_ref();
+                                prev_other.insert(other);
+                                continue;
                             }
 
+                            // Fully overlapped but with no more `right`, loop
+                            // again with a new one of each
+                            (Greater | Equal, Equal) => {
+                                range = self_iter.next()?.as_ref();
+                                continue;
+                            }
 
+                            // Partial overlap, but some `left` past `right`
+                            // Keep part of `left` and look for a new `right`
+                            (Greater | Equal, Greater) => {
+                                range.start = other.borrow_bound_after().unwrap();
+                                continue;
+                            }
+
+                            // `left` extends beyond `right` in both directions.
+                            // Use the part of `left` before `right` and store
+                            // the part after.
+                            (Less, Greater) => {
+                                prev_self.insert(Range {
+                                    start: other.borrow_bound_after().unwrap(),
+                                    end: core::mem::replace(
+                                        &mut range.end,
+                                        other.borrow_bound_before().unwrap(),
+                                    ),
+                                });
+                                return Some(range);
+                            }
                         }
                     } else {
-                        return self_iter.next();
+                        return Some(range);
                     }
                 }
-            }
-            DifferenceInner::Search {
-                self_iter,
-                other_set,
-            } => loop {
-                let self_next = self_iter.next()?;
+            } // DifferenceInner::Search { iter, other, prev } => {
 
-                todo!();
-                // TODO: implement
-                if !other_set.contains(&self_next) {
-                    return Some(self_next);
-                }
-            },
-            DifferenceInner::Iterate(iter) => iter.next(),
+              //     // Get either the next item in `iter`, or the previously stored
+              //     // state. Short circuit out if there are no more items in iter.
+              //     let (next, mut overlaps) = prev.take().or_else(|| {
+              //         let next = iter.next()?.as_ref();
+              //         let overlaps = if let Some(after) = next.end.borrow_after() {
+              //             other.map.map.range(..=after.cloned())
+              //         } else {
+              //             other.map.map.iter()
+              //         }
+              //         .rev().filter_map(|(k, _)| if &k.0.overlaps(other) )
+              //         .collect();
+
+              //         Some((next, overlaps))
+              //     })?;
+
+              //     if overlaps.is_empty() {
+              //         return Some(next);
+              //     }
+
+              //     // Get next segment from overlaps
+              //     loop {
+
+              //     }
+              // }
         }
     }
 
@@ -313,25 +414,207 @@ impl<'a, T: Clone + Ord> Iterator for Difference<'a, T> {
             DifferenceInner::Stitch {
                 self_iter,
                 other_iter,
+                ..
             } => (self_iter.len(), other_iter.len()),
-            DifferenceInner::Search {
-                self_iter,
-                other_set,
-            } => (self_iter.len(), other_set.len()),
+            // DifferenceInner::Search { iter, other, .. } => (iter.len(), other.len()),
             DifferenceInner::Iterate(iter) => (iter.len(), 0),
         };
         (self_len.saturating_sub(other_len), Some(self_len))
     }
 
-    fn min(mut self) -> Option<&'a Range<T>> {
+    fn min(mut self) -> Option<Range<&'a T>> {
         self.next()
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct SymmetricDifference<'a, T> {
-    left: Iter<'a, T>,
-    right: Iter<'a, T>,
+    iter_a: Iter<'a, T>,
+    prev_a: Option<Range<&'a T>>,
+    iter_b: Iter<'a, T>,
+    prev_b: Option<Range<&'a T>>,
 }
+
+// impl<T: fmt::Debug> fmt::Debug for SymmetricDifference<'_, T> {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         f.debug_tuple("SymmetricDifference").field(&self.).finish()
+//     }
+// }
+
+// impl<T> Clone for SymmetricDifference<'_, T> {
+//     fn clone(&self) -> Self {
+//         Self {
+
+//         }
+//     }
+// }
+
+impl<'a, T: Ord> Iterator for SymmetricDifference<'a, T> {
+    type Item = Range<&'a T>;
+
+    fn next(&mut self) -> Option<Range<&'a T>> {
+        let next_a = self
+            .prev_a
+            .take()
+            .or_else(|| self.iter_a.next().map(|x| x.as_ref()));
+
+        let next_b = self
+            .prev_b
+            .take()
+            .or_else(|| self.iter_b.next().map(|x| x.as_ref()));
+
+        // If one ran out, use the other
+        let mut next_a = match next_a {
+            Some(a) => a,
+            None => return next_b,
+        };
+        let mut next_b = match next_b {
+            Some(b) => b,
+            None => return Some(next_a),
+        };
+
+        // Otherwise, look for mutually exclusive items
+        loop {
+            // If `next_a` is fully before `next_b`, use it
+            // (and hold on to `next_b`)
+            if next_a.end.cmp_start(&next_b.start).is_gt() {
+                self.prev_b.insert(next_b);
+                return Some(next_b);
+            }
+
+            // Likewise the other way around
+            if next_a.start.cmp_end(&next_b.end).is_gt() {
+                self.prev_a.insert(next_a);
+                return Some(next_a);
+            }
+
+            // Otherwise, we have some overlap
+            //
+            // Similar to Difference impl
+            match (next_a.start.cmp(&next_b.start), next_a.end.cmp(&next_b.end)) {
+                // Partial overlap, but `a` doesn't extend beyond `b`.
+                // Use the non-overlapped part of `a` and remember to remove
+                // the overlap from `b` for the next iteration.
+                (Less, Less) => {
+                    // When removing the overlapped region, use `replace` to
+                    // make sure we do it in order.
+                    next_b.start =
+                        core::mem::replace(&mut next_a.end, next_b.borrow_bound_before().unwrap())
+                            .borrow_after()
+                            .unwrap();
+                    self.prev_b.insert(next_b);
+                    return Some(next_a);
+                }
+
+                // Partial overlap where `a` extends just to the
+                // end of `b` (don't save `b`)
+                (Less, Equal) => {
+                    next_a.end = next_b.borrow_bound_before().unwrap();
+                    return Some(next_a);
+                }
+
+                // `a` extends beyond `b` in both directions.
+                // Use the part of `a` before `b` and store
+                // the part after.
+                (Less, Greater) => {
+                    self.prev_a.insert(Range {
+                        start: next_b.borrow_bound_after().unwrap(),
+                        end: next_a.end.clone(),
+                    });
+                    next_a.end = next_b.borrow_bound_before().unwrap();
+                    return Some(next_a);
+                }
+
+                // `b` extends past `a`. Remove the overlap and loop
+                // (if necessary)
+                (Equal, Less) => {
+                    next_b.start = next_a.borrow_bound_after().unwrap();
+                    if let Some(a) = self.iter_a.next() {
+                        next_a = a.as_ref();
+                        continue;
+                    } else {
+                        // No more `a`s, just return this `b` part
+                        return Some(next_b);
+                    }
+                }
+
+                // Both exactly overlap each other. loop!
+                // (or return early because we're out of items in one)
+                (Equal, Equal) => {
+                    if let Some(a) = self.iter_a.next().map(|x| x.as_ref()) {
+                        next_a = a;
+                    } else {
+                        // But no more `a`s
+                        return Some(next_b);
+                    }
+                    if let Some(b) = self.iter_b.next().map(|x| x.as_ref()) {
+                        next_b = b;
+                    } else {
+                        // But no more `b`s
+                        return Some(next_a);
+                    }
+                    continue;
+                }
+
+                // Partial overlap, but some `b` past `a`
+                // Keep part of `a` and look for a new `b`
+                (Equal, Greater) => {
+                    next_a.start = next_b.borrow_bound_after().unwrap();
+                    if let Some(b) = self.iter_b.next().map(|x| x.as_ref()) {
+                        next_b = b;
+                    } else {
+                        return Some(next_b);
+                    }
+                    continue;
+                }
+
+                // `b` extends beyond `a` in both directions.
+                // Use the part of `b` before `a` and store
+                // the part after.
+                (Greater, Less) => {
+                    self.prev_b.insert(Range {
+                        start: next_a.borrow_bound_after().unwrap(),
+                        end: next_b.end.clone(),
+                    });
+                    next_b.end = next_a.borrow_bound_before().unwrap();
+                    return Some(next_b);
+                }
+
+                // Partial overlap, where `b` extends before `a`, but they
+                // end together.
+                (Greater, Equal) => {
+                    next_b.end = next_a.borrow_bound_before().unwrap();
+                    return Some(next_b);
+                }
+
+                // Partial overlap, but `b` doesn't extend beyond `a`.
+                // Use the non-overlapped part of `b` and remember to remove
+                // the overlap from `a` for the next iteration.
+                (Greater, Greater) => {
+                    // When removing the overlapped region, use `replace` to
+                    // make sure we do it in order. (Similar to (Less, Less))
+                    next_a.start =
+                        core::mem::replace(&mut next_b.end, next_a.borrow_bound_before().unwrap())
+                            .borrow_after()
+                            .unwrap();
+                    self.prev_a.insert(next_a);
+                    return Some(next_b);
+                }
+            }
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (0, Some(self.iter_a.len() + self.iter_b.len()))
+    }
+
+    fn min(mut self) -> Option<Range<&'a T>> {
+        self.next()
+    }
+}
+
+impl<T: Ord> FusedIterator for SymmetricDifference<'_, T> {}
+
 pub struct Intersection<'a, T> {
     left: Iter<'a, T>,
     right: Iter<'a, T>,

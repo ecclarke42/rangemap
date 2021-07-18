@@ -1,13 +1,13 @@
-use core::prelude::v1::*;
 use core::{
     fmt::{self, Debug},
     ops::RangeBounds,
 };
+use core::{ops::Bound, prelude::v1::*};
 
-use crate::{map::Key, range::StartBound, Range, RangeMap};
+use crate::{bounds::StartBound, map::Key, Range, RangeMap};
 
 pub mod iterators;
-pub mod ops;
+// pub mod ops;
 
 // TODO docs
 
@@ -54,7 +54,9 @@ impl<T> RangeSet<T> {
     }
 
     pub fn is_disjoint(&self, other: &Self) -> bool {
-        self.intersection(other).next().is_none()
+        // self.intersection(other).next().is_none()
+        todo!()
+        // TODO
     }
 
     pub fn is_subset(&self, other: &Self) -> bool {
@@ -127,19 +129,23 @@ impl<T> RangeSet<T> {
     pub fn retain<F>(&mut self, mut f: F)
     where
         T: Ord,
-        F: FnMut(&T) -> bool,
+        F: FnMut(&Range<T>) -> bool,
     {
-        self.map.retain(|(k, _)| f(k))
+        self.map.retain(|r, _| f(r))
     }
 
+    // TODO: note clone needs
     pub fn append(&mut self, other: &mut Self)
     where
-        T: Ord,
+        T: Clone + Ord,
     {
         self.map.append(&mut other.map)
     }
 
-    pub fn split_off(&mut self, at: StartBound<T>) -> Self {
+    pub fn split_off(&mut self, at: Bound<T>) -> Self
+    where
+        T: Clone + Ord,
+    {
         Self {
             map: self.map.split_off(at),
         }
@@ -149,15 +155,19 @@ impl<T> RangeSet<T> {
     where
         T: Clone + Ord,
     {
-        // RangeMap::iter_complement MUST return disjoint ranges,
-        // so we know we can just insert them without extra checking
-        self.map
-            .iter_complement()
-            .fold(Self::new(), |mut set, range| {
-                set.map.map.insert(Key(range), ());
-                set
-            })
+        // TODO
+        todo!()
+        // // RangeMap::iter_complement MUST return disjoint ranges,
+        // // so we know we can just insert them without extra checking
+        // self.map
+        //     .iter_complement()
+        //     .fold(Self::new(), |mut set, range| {
+        //         set.map.map.insert(Key(range), ());
+        //         set
+        //     })
     }
+
+    // TODO: subset(&self, range: R) -> Self; slightly faster than ranges(..).filter().collect() because it doesn't need to check insertions
 }
 
 impl<T> Default for RangeSet<T>
@@ -239,7 +249,7 @@ mod tests {
     #[test]
     fn empty_set_is_empty() {
         let range_set: RangeSet<u32> = RangeSet::new();
-        assert_eq!(range_set.to_vec(), vec![]);
+        assert_eq!(range_set.to_vec(), Vec::<Range<u32>>::new());
     }
 
     #[test]
@@ -257,29 +267,30 @@ mod tests {
         assert_eq!(range_set.to_vec(), vec![0..25]);
     }
 
-    #[test]
-    fn gaps_between_items_floating_inside_outer_range() {
-        let mut range_set: RangeSet<u32> = RangeSet::new();
-        // 0 1 2 3 4 5 6 7 8 9
-        // ◌ ◌ ◌ ◌ ◌ ●-◌ ◌ ◌ ◌
-        range_set.insert(5..6);
-        // 0 1 2 3 4 5 6 7 8 9
-        // ◌ ◌ ◌ ●-◌ ◌ ◌ ◌ ◌ ◌
-        range_set.insert(3..4);
-        // 0 1 2 3 4 5 6 7 8 9
-        // ◌ ◆-------------◇ ◌
-        let outer_range = 1..8;
-        let mut gaps = range_set.gaps_in(&outer_range);
-        // Should yield gaps at start, between items,
-        // and at end.
-        assert_eq!(gaps.next(), Some(1..3));
-        assert_eq!(gaps.next(), Some(4..5));
-        assert_eq!(gaps.next(), Some(6..8));
-        assert_eq!(gaps.next(), None);
-        // Gaps iterator should be fused.
-        assert_eq!(gaps.next(), None);
-        assert_eq!(gaps.next(), None);
-    }
+    // TODO: gaps_in
+    // #[test]
+    // fn gaps_between_items_floating_inside_outer_range() {
+    //     let mut range_set: RangeSet<u32> = RangeSet::new();
+    //     // 0 1 2 3 4 5 6 7 8 9
+    //     // ◌ ◌ ◌ ◌ ◌ ●-◌ ◌ ◌ ◌
+    //     range_set.insert(5..6);
+    //     // 0 1 2 3 4 5 6 7 8 9
+    //     // ◌ ◌ ◌ ●-◌ ◌ ◌ ◌ ◌ ◌
+    //     range_set.insert(3..4);
+    //     // 0 1 2 3 4 5 6 7 8 9
+    //     // ◌ ◆-------------◇ ◌
+    //     let outer_range = 1..8;
+    //     let mut gaps = range_set.gaps_in(&outer_range);
+    //     // Should yield gaps at start, between items,
+    //     // and at end.
+    //     assert_eq!(gaps.next(), Some(1..3));
+    //     assert_eq!(gaps.next(), Some(4..5));
+    //     assert_eq!(gaps.next(), Some(6..8));
+    //     assert_eq!(gaps.next(), None);
+    //     // Gaps iterator should be fused.
+    //     assert_eq!(gaps.next(), None);
+    //     assert_eq!(gaps.next(), None);
+    // }
     ///
     /// impl Debug
     ///

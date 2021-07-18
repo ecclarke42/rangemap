@@ -1,4 +1,4 @@
-use crate::range::{Range, StartBound};
+use crate::{bounds::StartBound, range::Range};
 use core::{cmp::Ordering, fmt::Debug, ops::Bound};
 
 /// Wrapper type for items the map (range should only ever be increasing)
@@ -17,6 +17,11 @@ impl<T> core::borrow::Borrow<StartBound<T>> for Key<T> {
         &self.0.start
     }
 }
+// impl<T> core::borrow::Borrow<StartBound<&T>> for Key<T> {
+//     fn borrow(&self) -> &StartBound<&T> {
+//         &self.0.start.as_ref()
+//     }
+// }
 // impl<'a, T> core::borrow::Borrow<StartBound<&'a T>> for Key<T> {
 //     fn borrow(&self) -> &StartBound<&'a T> {
 //         match &self.0.start.0 {

@@ -4,7 +4,10 @@ use core::{
 };
 
 use super::Key;
-use crate::{Range, RangeMap};
+use crate::{
+    bounds::{EndBound, StartBound},
+    Range, RangeMap,
+};
 // TODO: all doctests
 
 impl<K, V> RangeMap<K, V> {
@@ -171,10 +174,10 @@ impl<K, V> RangeMap<K, V> {
 
     // fn range_bounds(&self) -> R?
 
-    pub fn iter_complement(&self) -> impl Iterator<Item = Range<K>> {
-        todo!()
-        // TODO: and type
-    }
+    // TODO: and type
+    // pub fn iter_complement(&self) -> impl Iterator<Item = Range<K>> {
+    //     todo!()
+    // }
 
     /// Gets an iterator over all maximally-sized gaps between ranges in the map
     ///
@@ -195,11 +198,15 @@ impl<K, V> RangeMap<K, V> {
     /// NOTE: Unlike [`gaps`], the iterator here WILL include regions before and
     /// after those stored in the map, so long as they are included in the outer
     /// range
-    pub fn gaps_in<R: core::ops::RangeBounds<K>>(&self, range: R) -> GapsIn<'_, K, V> {
+    pub fn gaps_in<'a, R: 'a + core::ops::RangeBounds<K>>(
+        &'a self,
+        range: R,
+    ) -> GapsIn<'a, K, V, R> {
+        // TODO: why can't we borrow start/end and make `bounds` a Range<&'a T>?
         GapsIn {
             iter: self.iter(),
             prev: None,
-            bounds: Range::from(range),
+            bounds: range,
         }
     }
 }
@@ -219,19 +226,24 @@ impl<'a, K, V> IntoIterator for &'a RangeMap<K, V> {
     }
 }
 
-impl<K: Ord, V> FromIterator<(K, V)> for RangeMap<K, V> {
-    fn from_iter<T: IntoIterator<Item = (K, V)>>(iter: T) -> Self {
+impl<R: core::ops::RangeBounds<K>, K: Clone + Ord, V: Clone + Eq> FromIterator<(R, V)>
+    for RangeMap<K, V>
+{
+    fn from_iter<T: IntoIterator<Item = (R, V)>>(iter: T) -> Self {
         let mut map = Self::new();
         map.extend(iter);
         map
     }
 }
 
-impl<K: Ord, V> Extend<(K, V)> for RangeMap<K, V> {
+// TODO: note need for clone (insert) and setting existing
+impl<R: core::ops::RangeBounds<K>, K: Clone + Ord, V: Clone + Eq> Extend<(R, V)>
+    for RangeMap<K, V>
+{
     #[inline]
-    fn extend<T: IntoIterator<Item = (K, V)>>(&mut self, iter: T) {
+    fn extend<T: IntoIterator<Item = (R, V)>>(&mut self, iter: T) {
         iter.into_iter().for_each(move |(k, v)| {
-            self.insert(k, v);
+            self.set(k, v);
         });
     }
 
@@ -240,16 +252,16 @@ impl<K: Ord, V> Extend<(K, V)> for RangeMap<K, V> {
     //     self.insert(k, v);
     // }
 }
-impl<'a, K: Ord + Copy, V: Copy> Extend<(&'a K, &'a V)> for RangeMap<K, V> {
-    fn extend<I: IntoIterator<Item = (&'a K, &'a V)>>(&mut self, iter: I) {
-        self.extend(iter.into_iter().map(|(&key, &value)| (key, value)));
-    }
+// impl<'a, K: Ord + Copy, V: Copy> Extend<(&'a K, &'a V)> for RangeMap<K, V> {
+//     fn extend<I: IntoIterator<Item = (&'a K, &'a V)>>(&mut self, iter: I) {
+//         self.extend(iter.into_iter().map(|(&key, &value)| (key, value)));
+//     }
 
-    // #[inline]
-    // fn extend_one(&mut self, (&k, &v): (&'a K, &'a V)) {
-    //     self.insert(k, v);
-    // }
-}
+//     // #[inline]
+//     // fn extend_one(&mut self, (&k, &v): (&'a K, &'a V)) {
+//     //     self.insert(k, v);
+//     // }
+// }
 
 /// An iterator over the entries of a `RangeMap`.
 ///
@@ -583,59 +595,60 @@ where
 
 impl<K: Clone + Ord, V> FusedIterator for Gaps<'_, K, V> {}
 
-pub struct GapsIn<'a, K, V> {
+pub struct GapsIn<'a, K, V, R> {
     iter: Iter<'a, K, V>,
     prev: Option<&'a Range<K>>,
-    bounds: Range<K>,
+    bounds: R,
 }
 
 // TODO: document panics in Gaps
 
-impl<'a, K, V> Iterator for GapsIn<'a, K, V>
+impl<'a, K, V, R> Iterator for GapsIn<'a, K, V, R>
 where
-    K: Ord + Clone,
+    K: Ord,
+    R: core::ops::RangeBounds<K>,
 {
-    type Item = Range<K>;
+    type Item = Range<&'a K>;
     fn next(&mut self) -> Option<Self::Item> {
         todo!();
         // TODO
 
-        if let Some((next, _)) = self.iter.next() {
-            if let Some(prev) = self.prev {
-                // Get the adjacent bound to the end of the previous range
+        // if let Some((next, _)) = self.iter.next() {
+        //     if let Some(prev) = self.prev {
+        //         // Get the adjacent bound to the end of the previous range
 
-                let start = prev.bound_after()?.cloned(); // If none, no more gaps (this extends forwards to infinity)
-                let end = next
-                    .bound_before()
-                    .expect("Unbounded internal range in RangeMap")
-                    .cloned();
-                self.prev = Some(next);
-                Some(Range { start, end })
-            } else {
-                // No previous bound means first gap
+        //         let start = prev.bound_after()?.cloned(); // If none, no more gaps (this extends forwards to infinity)
+        //         let end = next
+        //             .bound_before()
+        //             .expect("Unbounded internal range in RangeMap")
+        //             .cloned();
+        //         self.prev = Some(next);
+        //         Some(Range { start, end })
+        //     } else {
+        //         // No previous bound means first gap
 
-                // Get the adjacent bound to the end of the first range
-                let start = next.bound_after()?.cloned(); // If none, no more gaps (this extends forwards to infinity)
+        //         // Get the adjacent bound to the end of the first range
+        //         let start = next.bound_after()?.cloned(); // If none, no more gaps (this extends forwards to infinity)
 
-                // Check if we have another range
-                if let Some((next, _)) = self.iter.next() {
-                    // Store the end of the next segment for next iteration
-                    let end = next
-                        .bound_before()
-                        .expect("Unbounded internal range in RangeMap")
-                        .cloned();
+        //         // Check if we have another range
+        //         if let Some((next, _)) = self.iter.next() {
+        //             // Store the end of the next segment for next iteration
+        //             let end = next
+        //                 .bound_before()
+        //                 .expect("Unbounded internal range in RangeMap")
+        //                 .cloned();
 
-                    self.prev = Some(next);
-                    Some(Range { start, end })
-                } else {
-                    // Only one item (no gaps)
-                    None
-                }
-            }
-        } else {
-            None
-        }
+        //             self.prev = Some(next);
+        //             Some(Range { start, end })
+        //         } else {
+        //             // Only one item (no gaps)
+        //             None
+        //         }
+        //     }
+        // } else {
+        //     None
+        // }
     }
 }
 
-impl<K: Clone + Ord, V> FusedIterator for GapsIn<'_, K, V> {}
+impl<K: Clone + Ord, V, R: core::ops::RangeBounds<K>> FusedIterator for GapsIn<'_, K, V, R> {}

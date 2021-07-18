@@ -6,7 +6,10 @@ use core::{
     ops::{Index, RangeBounds},
 };
 
-use crate::{range::StartBound, Bound, Range};
+use crate::{
+    bounds::{Bound, StartBound},
+    Range,
+};
 pub(crate) use key::Key;
 
 pub mod iterators;
@@ -24,7 +27,7 @@ pub struct RangeMap<K, V> {
     /// TODO Performance Improvement:
     ///     This (and successor key collection) could be more streamlined with a
     ///     few strategically placed `unsafe` blocks
-    store: Vec<Key<K>>,
+    pub(crate) store: Vec<Key<K>>,
 }
 
 impl<K, V> RangeMap<K, V> {
@@ -234,6 +237,14 @@ impl<K, V> RangeMap<K, V> {
     /// Get the highest bound covered by the ranges in this map
     pub fn upper_bound(&self) -> Option<&Bound<K>> {
         self.map.iter().next_back().map(|(range, _)| &range.0.end.0)
+    }
+
+    pub fn retain<F>(&mut self, mut f: F)
+    where
+        K: Ord,
+        F: FnMut(&Range<K>, &mut V) -> bool,
+    {
+        self.map.retain(|k, v| f(&k.0, v))
     }
 }
 
@@ -660,14 +671,6 @@ impl<K: Clone + Ord, V: Clone + Eq> RangeMap<K, V> {
         }
     }
 
-    pub fn retain<F>(&mut self, mut f: F)
-    where
-        K: Ord,
-        F: FnMut(&Key<K>, &mut V) -> bool,
-    {
-        self.map.retain(f)
-    }
-
     /// Moves all elements from `other` into `Self`, leaving `other` empty.
     ///
     /// # Examples
@@ -748,25 +751,26 @@ impl<K: Clone + Ord, V: Clone + Eq> RangeMap<K, V> {
     /// assert!(b.get(&1).is_none());
     /// ```
     // TODO: at: Into<StartBound<K>>
-    pub fn split_off(&mut self, at: StartBound<K>) -> Self {
+    pub fn split_off(&mut self, at: Bound<K>) -> Self {
+        let at = StartBound(at);
         if self.is_empty() {
             return Self::new();
         }
 
         // Split non-overlapping items
-        let other = self.map.split_off(&at);
+        let mut other = self.map.split_off(&at);
 
         // TODO: clean up
 
         // If there are still items in the lower map, check if the last range
         // crosses the boundary into the upper map
         // No split should be necessary if `at` is unbounded
-        if let Some((split_range, _)) = self.map.iter().next_back() {
+        if let Some(split_range) = self.map.iter().next_back().map(|(k, _)| k.clone()) {
             // These should all be together and available if there's a split
             if let Some((left_end, at_value)) = at.before().zip(at.value()) {
                 if split_range.0.contains(at_value) {
                     // This should always unwrap, because we know the key exists
-                    let value = self.map.remove(split_range).unwrap();
+                    let value = self.map.remove(&split_range).unwrap();
 
                     // Reinsert truncated range in each
                     self.map.insert(

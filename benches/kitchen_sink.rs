@@ -5,6 +5,8 @@ use criterion::Criterion;
 use rand::prelude::*;
 use std::ops::Range;
 
+// TODO: add comparison to jeffparsons/rangemap
+
 fn kitchen_sink(kvs: &[(Range<i32>, bool)]) {
     use rangemap::RangeMap;
 
@@ -13,9 +15,9 @@ fn kitchen_sink(kvs: &[(Range<i32>, bool)]) {
     let mut remove = false;
     for (range, value) in kvs {
         if remove {
-            range_map.remove(range.clone());
+            range_map.clear_range(range.clone());
         } else {
-            range_map.insert(range.clone(), *value);
+            range_map.set(range.clone(), *value);
         }
         remove = !remove;
     }

@@ -17,6 +17,8 @@ mod key;
 
 // TODO: docs like BTreeMap
 
+// TODO: Entry-like api, but not exactly?
+
 #[derive(Clone)]
 pub struct RangeMap<K, V> {
     pub(crate) map: BTreeMap<Key<K>, V>,
@@ -58,9 +60,7 @@ impl<K, V> RangeMap<K, V> {
     }
 
     // TODO: docs
-    /// Makes a new, empty `RangeMap`.
-    ///
-    /// Does not allocate anything on its own.
+    /// Makes a new, empty `RangeMap` with a value for the full range.
     ///
     /// # Examples
     ///
@@ -751,6 +751,7 @@ impl<K: Clone + Ord, V: Clone + Eq> RangeMap<K, V> {
     /// assert!(b.get(&1).is_none());
     /// ```
     // TODO: at: Into<StartBound<K>>
+    // TODO: split_off_range
     pub fn split_off(&mut self, at: Bound<K>) -> Self {
         let at = StartBound(at);
         if self.is_empty() {

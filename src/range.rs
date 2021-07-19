@@ -6,7 +6,10 @@ use core::{
 };
 
 // TODO: how to express an empty range? just Option<Range<T>>?
-/// Monotonically increasing segment, for use in [`RangeMap`]
+/// Monotonically increasing segment, for use as a concrete range type in
+/// [`RangeMap`].
+///
+///
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct Range<T> {
     pub(crate) start: StartBound<T>,
@@ -99,6 +102,13 @@ impl<T> Range<T> {
             start: StartBound(Included(value.clone())),
             end: EndBound(Included(value)),
         }
+    }
+
+    pub fn start_value(&self) -> Option<&T> {
+        self.start.value()
+    }
+    pub fn end_value(&self) -> Option<&T> {
+        self.end.value()
     }
 
     /// Shift the entire range by some value

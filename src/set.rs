@@ -151,6 +151,8 @@ impl<T> RangeSet<T> {
         }
     }
 
+    // TODO: split_off_range
+
     pub fn complement(&self) -> Self
     where
         T: Clone + Ord,

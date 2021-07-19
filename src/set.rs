@@ -42,7 +42,7 @@ impl<T> RangeSet<T> {
     where
         T: Clone + Ord,
     {
-        self.map.get_key_value(value).map(|(range, _)| range)
+        self.map.get_range_value(value).map(|(range, _)| range)
     }
 
     /// Returns `true` if any range in the set covers the specified value.
@@ -50,7 +50,7 @@ impl<T> RangeSet<T> {
     where
         T: Clone + Ord,
     {
-        self.map.contains_point(value)
+        self.map.contains(value)
     }
 
     pub fn is_disjoint(&self, other: &Self) -> bool {
@@ -119,7 +119,7 @@ impl<T> RangeSet<T> {
         R: RangeBounds<T>,
         T: Clone + Ord,
     {
-        if let Some(map) = self.map.remove_range(range) {
+        if let Some(map) = self.map.remove(range) {
             map.into()
         } else {
             Self::new()
@@ -306,11 +306,11 @@ mod tests {
 
         // One entry
         set.insert(2..5);
-        assert_eq!(format!("{:?}", set), "{2..5}");
+        assert_eq!(format!("{:?}", set), "{[2, 5)}");
 
         // Many entries
-        set.insert(7..8);
+        set.insert(7..=8);
         set.insert(10..11);
-        assert_eq!(format!("{:?}", set), "{2..5, 7..8, 10..11}");
+        assert_eq!(format!("{:?}", set), "{[2, 5), [7, 8], [10, 11)}");
     }
 }

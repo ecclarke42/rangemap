@@ -1,6 +1,6 @@
 [package]
 name = "rangemap"
-version = "0.1.11"
+version = "0.2.0"
 authors = ["Jeff Parsons <jeff@parsons.io>"]
 edition = "2018"
 license = "MIT/Apache-2.0"
@@ -23,6 +23,8 @@ criterion = { version = "0.3", features = ["html_reports"] }
 rand = "0.8"
 chrono = "0.4" # For examples
 rustc_version = "0.4"
+
+base = { package = "rangemap", git = "https://github.com/jeffparsons/rangemap" } # Compare to more recent published (non-forked) version
 
 [features]
 # So we can run doc tests from "README.md".

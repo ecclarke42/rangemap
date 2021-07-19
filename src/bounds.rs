@@ -12,13 +12,12 @@ impl<T: Debug> Debug for StartBound<T> {
         self.0.fmt(f)
     }
 }
+
 impl<T> StartBound<T> {
     pub fn as_ref(&self) -> StartBound<&T> {
         StartBound(self.as_bound_inner_ref())
     }
-    pub fn as_bound(&self) -> &Bound<T> {
-        &self.0
-    }
+
     pub fn as_bound_inner_ref(&self) -> Bound<&T> {
         match &self.0 {
             Included(x) => Included(x),
@@ -26,12 +25,14 @@ impl<T> StartBound<T> {
             Unbounded => Unbounded,
         }
     }
+
     pub fn value(&self) -> Option<&T> {
         match &self.0 {
             Included(x) | Excluded(x) => Some(x),
             Unbounded => None,
         }
     }
+
     pub fn value_mut(&mut self) -> Option<&mut T> {
         match &mut self.0 {
             Included(x) | Excluded(x) => Some(x),
@@ -66,17 +67,16 @@ impl<T> StartBound<T> {
             },
         }
     }
-    // pub fn gt_end(&self)
 }
 
 impl<'a, T> StartBound<&'a T> {
-    pub fn into_before(self) -> Option<EndBound<&'a T>> {
-        match self.0 {
-            Excluded(t) => Some(EndBound(Included(t))),
-            Included(t) => Some(EndBound(Excluded(t))),
-            Unbounded => None,
-        }
-    }
+    // pub fn into_before(self) -> Option<EndBound<&'a T>> {
+    //     match self.0 {
+    //         Excluded(t) => Some(EndBound(Included(t))),
+    //         Included(t) => Some(EndBound(Excluded(t))),
+    //         Unbounded => None,
+    //     }
+    // }
     pub fn borrow_before(&self) -> Option<EndBound<&'a T>> {
         match self.0 {
             Excluded(t) => Some(EndBound(Included(t))),
@@ -146,9 +146,6 @@ impl<T> EndBound<T> {
     pub fn as_ref(&self) -> EndBound<&T> {
         EndBound(self.as_bound_inner_ref())
     }
-    pub fn as_bound(&self) -> &Bound<T> {
-        &self.0
-    }
     pub fn as_bound_inner_ref(&self) -> Bound<&T> {
         match &self.0 {
             Included(x) => Included(x),
@@ -185,13 +182,13 @@ impl<T> EndBound<T> {
 }
 
 impl<'a, T> EndBound<&'a T> {
-    pub fn into_after(self) -> Option<StartBound<&'a T>> {
-        match self.0 {
-            Excluded(t) => Some(StartBound(Included(t))),
-            Included(t) => Some(StartBound(Excluded(t))),
-            Unbounded => None,
-        }
-    }
+    // pub fn into_after(self) -> Option<StartBound<&'a T>> {
+    //     match self.0 {
+    //         Excluded(t) => Some(StartBound(Included(t))),
+    //         Included(t) => Some(StartBound(Excluded(t))),
+    //         Unbounded => None,
+    //     }
+    // }
     pub fn borrow_after(&self) -> Option<StartBound<&'a T>> {
         match self.0 {
             Excluded(t) => Some(StartBound(Included(t))),

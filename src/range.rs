@@ -5,12 +5,9 @@ use core::{
     ops::Bound::{self, *},
 };
 
-// TODO: how to express an empty range? just Option<Range<T>>?
 /// Monotonically increasing segment, for use as a concrete range type in
 /// [`RangeMap`].
-///
-///
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Hash, Eq)]
 pub struct Range<T> {
     pub(crate) start: StartBound<T>,
     pub(crate) end: EndBound<T>,
@@ -25,11 +22,29 @@ impl<T> core::ops::RangeBounds<T> for Range<T> {
     }
 }
 
-// impl<T, R: core::ops::RangeBounds<T>> From<R> for Range<T> {
-//     fn from(r: R) -> Self {
+impl<T> core::ops::RangeBounds<T> for &Range<T> {
+    fn start_bound(&self) -> Bound<&T> {
+        self.start.as_bound_inner_ref()
+    }
+    fn end_bound(&self) -> Bound<&T> {
+        self.end.as_bound_inner_ref()
+    }
+}
 
-//     }
-// }
+impl<T: Debug> Debug for Range<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match &self.start.0 {
+            Unbounded => write!(f, "(-∞, ")?,
+            Excluded(t) => write!(f, "({:?}, ", t)?,
+            Included(t) => write!(f, "[{:?}, ", t)?,
+        }
+        match &self.end.0 {
+            Unbounded => write!(f, "∞)"),
+            Excluded(t) => write!(f, "{:?})", t),
+            Included(t) => write!(f, "{:?}]", t),
+        }
+    }
+}
 
 impl<T> Range<T> {
     /// Construct a new segment from range bounds
@@ -47,11 +62,19 @@ impl<T> Range<T> {
     /// Only one range is too strange to be included here. If you pass a point
     /// range with both the start and end excluded, this will panic, as the
     /// range is impossible to evaluate
+    ///
+    /// ```
+    /// use rangemap::{Range, Bound};
+    /// use core::ops::RangeBounds;
+    ///
+    /// let r = Range::new(0..5);
+    /// assert_eq!(r.start_bound(), Bound::Included(&0));
+    /// assert_eq!(r.end_bound(), Bound::Excluded(&5));
+    /// ```
     pub fn new<R: core::ops::RangeBounds<T>>(r: R) -> Self
     where
         T: Ord + Clone,
     {
-        // TODO: use start.cmp_end(end)?
         let start = bound_cloned(r.start_bound());
         let end = bound_cloned(r.end_bound());
         match (&start, &end) {
@@ -83,9 +106,19 @@ impl<T> Range<T> {
         }
     }
 
-    // TODO: names
-
-    // TODO: docs
+    /// Construct a new [`Range`] that spans all possible values
+    ///
+    /// This is the same as `Range::new(..)`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rangemap::{Range, Bound, RangeBounds};
+    ///
+    /// let r = Range::<u32>::full();
+    /// assert_eq!(r.start_bound(), Bound::Unbounded);
+    /// assert_eq!(r.end_bound(), Bound::Unbounded);
+    /// ```
     pub fn full() -> Self {
         Self {
             start: StartBound(Unbounded),
@@ -94,6 +127,16 @@ impl<T> Range<T> {
     }
 
     /// Constructs a new point segement at the given value
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rangemap::{Range, RangeBounds, Bound};
+    ///
+    /// let r = Range::point(5);
+    /// assert_eq!(r.start_bound(), Bound::Included(&5));
+    /// assert_eq!(r.end_bound(), Bound::Included(&5));
+    /// ```
     pub fn point(value: T) -> Self
     where
         T: Clone,
@@ -104,9 +147,36 @@ impl<T> Range<T> {
         }
     }
 
+    /// Get the start value of the range (if it is bounded)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rangemap::{Range, RangeBounds, Bound};
+    ///
+    /// let bounded = Range::new(5..10);
+    /// assert_eq!(bounded.start_value(), Some(&5));
+    ///
+    /// let unbounded = Range::new(..10);
+    /// assert_eq!(unbounded.start_value(), None);
+    /// ```
     pub fn start_value(&self) -> Option<&T> {
         self.start.value()
     }
+
+    /// Get the end value of the range (if it is bounded)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rangemap::{Range, RangeBounds, Bound};
+    ///
+    /// let bounded = Range::new(5..10);
+    /// assert_eq!(bounded.end_value(), Some(&10));
+    ///
+    /// let unbounded = Range::new(5..);
+    /// assert_eq!(unbounded.end_value(), None);
+    /// ```
     pub fn end_value(&self) -> Option<&T> {
         self.end.value()
     }
@@ -330,61 +400,75 @@ fn bound_value<T>(b: Bound<T>) -> Option<T> {
 //     }
 // }
 
-impl<T> PartialEq<core::ops::RangeFull> for Range<T> {
-    fn eq(&self, _other: &core::ops::RangeFull) -> bool {
-        matches!(
-            (&self.start, &self.end),
-            (StartBound(Unbounded), EndBound(Unbounded)),
-        )
+impl<T: PartialEq, R: core::ops::RangeBounds<T>> PartialEq<R> for Range<T> {
+    fn eq(&self, other: &R) -> bool {
+        (match (&self.start.0, other.start_bound()) {
+            (Unbounded, Unbounded) => true,
+            (Included(t), Included(u)) | (Excluded(t), Excluded(u)) => t.eq(u),
+            _ => false,
+        }) && (match (&self.end.0, other.end_bound()) {
+            (Unbounded, Unbounded) => true,
+            (Included(t), Included(u)) | (Excluded(t), Excluded(u)) => t.eq(u),
+            _ => false,
+        })
     }
 }
 
-impl<T: Ord> PartialEq<core::ops::Range<T>> for Range<T> {
-    fn eq(&self, other: &core::ops::Range<T>) -> bool {
-        if let (StartBound(Included(start)), EndBound(Excluded(end))) = (&self.start, &self.end) {
-            other.start.eq(start) && other.end.eq(end)
-        } else {
-            false
-        }
-    }
-}
+// impl<T> PartialEq<core::ops::RangeFull> for Range<T> {
+//     fn eq(&self, _other: &core::ops::RangeFull) -> bool {
+//         matches!(
+//             (&self.start, &self.end),
+//             (StartBound(Unbounded), EndBound(Unbounded)),
+//         )
+//     }
+// }
 
-impl<T: Ord> PartialEq<core::ops::RangeFrom<T>> for Range<T> {
-    fn eq(&self, other: &core::ops::RangeFrom<T>) -> bool {
-        if let (StartBound(Included(start)), EndBound(Unbounded)) = (&self.start, &self.end) {
-            other.start.eq(start)
-        } else {
-            false
-        }
-    }
-}
+// impl<T: Ord> PartialEq<core::ops::Range<T>> for Range<T> {
+//     fn eq(&self, other: &core::ops::Range<T>) -> bool {
+//         if let (StartBound(Included(start)), EndBound(Excluded(end))) = (&self.start, &self.end) {
+//             other.start.eq(start) && other.end.eq(end)
+//         } else {
+//             false
+//         }
+//     }
+// }
 
-impl<T: Ord> PartialEq<core::ops::RangeTo<T>> for Range<T> {
-    fn eq(&self, other: &core::ops::RangeTo<T>) -> bool {
-        if let (StartBound(Unbounded), EndBound(Excluded(end))) = (&self.start, &self.end) {
-            other.end.eq(end)
-        } else {
-            false
-        }
-    }
-}
+// impl<T: Ord> PartialEq<core::ops::RangeFrom<T>> for Range<T> {
+//     fn eq(&self, other: &core::ops::RangeFrom<T>) -> bool {
+//         if let (StartBound(Included(start)), EndBound(Unbounded)) = (&self.start, &self.end) {
+//             other.start.eq(start)
+//         } else {
+//             false
+//         }
+//     }
+// }
 
-impl<T: Ord> PartialEq<core::ops::RangeInclusive<T>> for Range<T> {
-    fn eq(&self, other: &core::ops::RangeInclusive<T>) -> bool {
-        if let (StartBound(Included(start)), EndBound(Included(end))) = (&self.start, &self.end) {
-            other.start().eq(start) && other.end().eq(end)
-        } else {
-            false
-        }
-    }
-}
+// impl<T: Ord> PartialEq<core::ops::RangeTo<T>> for Range<T> {
+//     fn eq(&self, other: &core::ops::RangeTo<T>) -> bool {
+//         if let (StartBound(Unbounded), EndBound(Excluded(end))) = (&self.start, &self.end) {
+//             other.end.eq(end)
+//         } else {
+//             false
+//         }
+//     }
+// }
 
-impl<T: Ord> PartialEq<core::ops::RangeToInclusive<T>> for Range<T> {
-    fn eq(&self, other: &core::ops::RangeToInclusive<T>) -> bool {
-        if let (StartBound(Unbounded), EndBound(Included(end))) = (&self.start, &self.end) {
-            other.end.eq(end)
-        } else {
-            false
-        }
-    }
-}
+// impl<T: Ord> PartialEq<core::ops::RangeInclusive<T>> for Range<T> {
+//     fn eq(&self, other: &core::ops::RangeInclusive<T>) -> bool {
+//         if let (StartBound(Included(start)), EndBound(Included(end))) = (&self.start, &self.end) {
+//             other.start().eq(start) && other.end().eq(end)
+//         } else {
+//             false
+//         }
+//     }
+// }
+
+// impl<T: Ord> PartialEq<core::ops::RangeToInclusive<T>> for Range<T> {
+//     fn eq(&self, other: &core::ops::RangeToInclusive<T>) -> bool {
+//         if let (StartBound(Unbounded), EndBound(Included(end))) = (&self.start, &self.end) {
+//             other.end.eq(end)
+//         } else {
+//             false
+//         }
+//     }
+// }

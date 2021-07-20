@@ -96,15 +96,16 @@ impl<T> RangeSet<T> {
         }
     }
 
-    pub fn intersection<'a>(&'a self, other: &'a Self) -> Intersection<'a, T> {
-        todo!()
-    }
+    // TODO: intersection
+    // pub fn intersection<'a>(&'a self, other: &'a Self) -> Intersection<'a, T> {
+    //     todo!()
+    // }
 
-    pub fn union<'a>(&'a self, other: &'a Self) -> Union<'a, T> {
-        todo!()
-    }
+    // TODO: union
+    // pub fn union<'a>(&'a self, other: &'a Self) -> Union<'a, T> {
+    //     todo!()
+    // }
 
-    // TODO: names?
     // pub fn iter_complement(&self) -> impl Iterator<Item = Range<T>> {
     //     self.map.iter_complement()
     // }
@@ -139,7 +140,6 @@ impl<T> RangeSet<T> {
 //     }
 // }
 
-/// TODO: document use of Clone, and set ordering
 impl<Item: RangeBounds<T>, T: Clone + Ord> FromIterator<Item> for RangeSet<T> {
     fn from_iter<I: IntoIterator<Item = Item>>(iter: I) -> Self {
         let mut set = Self::new();
@@ -234,7 +234,6 @@ impl<T> IntoIterator for RangeSet<T> {
     type Item = Range<T>;
     type IntoIter = IntoIter<T>;
 
-    // TODO: docs
     fn into_iter(self) -> Self::IntoIter {
         IntoIter(self.map.into_iter())
     }
@@ -639,13 +638,11 @@ impl<'a, T: Ord> Iterator for SymmetricDifference<'a, T> {
 
 impl<T: Ord> FusedIterator for SymmetricDifference<'_, T> {}
 
-pub struct Intersection<'a, T> {
-    left: Iter<'a, T>,
-    right: Iter<'a, T>,
-}
-pub struct Union<'a, T> {
-    left: Iter<'a, T>,
-    right: Iter<'a, T>,
-}
-
-// TODO: Debug difference
+// pub struct Intersection<'a, T> {
+//     left: Iter<'a, T>,
+//     right: Iter<'a, T>,
+// }
+// pub struct Union<'a, T> {
+//     left: Iter<'a, T>,
+//     right: Iter<'a, T>,
+// }

@@ -6,12 +6,10 @@ use super::RangeSet;
 // pub fn is_disjoint(&self, other: &Self) -> bool {
 //     // self.intersection(other).next().is_none()
 //     todo!()
-//     // TODO
 // }
 
 // pub fn is_subset(&self, other: &Self) -> bool {
 //     todo!()
-//     // TODO
 // }
 
 // pub fn is_superset(&self, other: &Self) -> bool {
@@ -22,7 +20,6 @@ use super::RangeSet;
 // where
 //     T: Clone + Ord,
 // {
-//     // TODO
 //     todo!()
 //     // // RangeMap::iter_complement MUST return disjoint ranges,
 //     // // so we know we can just insert them without extra checking

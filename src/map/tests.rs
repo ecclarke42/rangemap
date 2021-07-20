@@ -361,7 +361,7 @@ fn remove_superset_of_stored() {
 }
 
 // Gaps tests
-// TODO: move to iterator tests
+// TODO: re-add
 
 // #[test]
 // fn whole_range_is_a_gap() {
@@ -646,7 +646,6 @@ fn map_debug_repr_looks_right() {
 
 // TODO: more iterator tests
 
-// TODO: uncomment
 // #[test]
 // fn into_iter_matches_iter() {
 //     // Just use vec since that's the same implementation we'd expect

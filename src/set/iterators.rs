@@ -144,7 +144,7 @@ impl<Item: RangeBounds<T>, T: Clone + Ord> FromIterator<Item> for RangeSet<T> {
     fn from_iter<I: IntoIterator<Item = Item>>(iter: I) -> Self {
         let mut set = Self::new();
         for item in iter {
-            set.set(item);
+            set.insert(item);
         }
         set
     }
@@ -163,7 +163,7 @@ impl<T: Clone + Ord> Extend<Range<T>> for RangeSet<T> {
     fn extend<Iter: IntoIterator<Item = Range<T>>>(&mut self, iter: Iter) {
         // self.map.extend(iter.into_iter().map(|t| (t, ())))
         iter.into_iter().for_each(move |range| {
-            self.set(range);
+            self.insert(range);
         });
     }
 

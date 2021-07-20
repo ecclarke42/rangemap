@@ -18,6 +18,24 @@ use super::RangeSet;
 //     other.is_subset(self)
 // }
 
+// pub fn complement(&self) -> Self
+// where
+//     T: Clone + Ord,
+// {
+//     // TODO
+//     todo!()
+//     // // RangeMap::iter_complement MUST return disjoint ranges,
+//     // // so we know we can just insert them without extra checking
+//     // self.map
+//     //     .iter_complement()
+//     //     .fold(Self::new(), |mut set, range| {
+//     //         set.map.map.insert(Key(range), ());
+//     //         set
+//     //     })
+// }
+
+// TODO: subset(&self, range: R) -> Self; slightly faster than ranges(..).filter().collect() because it doesn't need to check insertions
+
 /// Set Difference
 impl<T: Ord + Clone> core::ops::Sub<&RangeSet<T>> for &RangeSet<T> {
     type Output = RangeSet<T>;

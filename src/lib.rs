@@ -96,9 +96,6 @@ pub mod range;
 pub mod set;
 
 #[cfg(test)]
-mod tests;
-
-#[cfg(test)]
 mod stupid_range_map;
 
 pub use core::ops::{Bound, RangeBounds};

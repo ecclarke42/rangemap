@@ -32,13 +32,12 @@ impl<T> StartBound<T> {
             Unbounded => None,
         }
     }
-
-    pub fn value_mut(&mut self) -> Option<&mut T> {
-        match &mut self.0 {
-            Included(x) | Excluded(x) => Some(x),
-            Unbounded => None,
-        }
-    }
+    // pub fn value_mut(&mut self) -> Option<&mut T> {
+    //     match &mut self.0 {
+    //         Included(x) | Excluded(x) => Some(x),
+    //         Unbounded => None,
+    //     }
+    // }
     pub fn before(&self) -> Option<EndBound<&T>> {
         match &self.0 {
             Excluded(t) => Some(EndBound(Included(t))),
@@ -159,12 +158,12 @@ impl<T> EndBound<T> {
             Unbounded => None,
         }
     }
-    pub fn value_mut(&mut self) -> Option<&mut T> {
-        match &mut self.0 {
-            Included(x) | Excluded(x) => Some(x),
-            Unbounded => None,
-        }
-    }
+    // pub fn value_mut(&mut self) -> Option<&mut T> {
+    //     match &mut self.0 {
+    //         Included(x) | Excluded(x) => Some(x),
+    //         Unbounded => None,
+    //     }
+    // }
     pub fn after(&self) -> Option<StartBound<&T>> {
         match &self.0 {
             Excluded(t) => Some(StartBound(Included(t))),

@@ -1,13 +1,16 @@
 use core::fmt::{self, Debug};
 
 use crate::{
-    map::Key,
+    map::{Key, MaybeMap},
     Bound::{self, *},
     Range, RangeBounds, RangeMap,
 };
 
 pub mod iterators;
 // pub mod ops;
+
+#[cfg(test)]
+mod tests;
 
 /// # RangeSet
 ///
@@ -151,19 +154,23 @@ impl<T> RangeSet<T> {
     /// any existing range, then the ranges will be coalesced into
     /// a single contiguous range.
     ///
-    /// # Panics
+    /// # Examples
     ///
-    /// Panics if range `start >= end`.
-    pub fn insert<R>(&mut self, range: R) -> bool
-    where
-        R: RangeBounds<T>,
-        T: Clone + Ord,
-    {
-        // TODO: return options?
-        self.map.insert(range, ()).is_none()
-    }
-
-    pub fn set<R>(&mut self, range: R)
+    /// ```
+    /// use rangemap::{Range, RangeSet};
+    ///
+    /// let mut set = RangeSet::new();
+    /// set.insert(0..5);
+    /// assert!(!set.is_empty())
+    /// ```
+    ///
+    /// # See Also
+    ///
+    /// - [`RangeMap::insert`] and [`RangeMap::set`] for the internal map's
+    /// insertion semantics. Because values are always `()` and returning
+    /// overwritten values is not necessary, this method uses `set`.
+    ///
+    pub fn insert<R>(&mut self, range: R)
     where
         R: RangeBounds<T>,
         T: Clone + Ord,
@@ -171,38 +178,100 @@ impl<T> RangeSet<T> {
         self.map.set(range, ())
     }
 
-    // Replace? Doesn't seem meaningful
-
-    /// Removes a range from the set, if all or any of it was present.
+    /// Removes a range from the set returning if all or any of it was present.
     ///
-    /// If the range to be removed _partially_ overlaps any ranges
-    /// in the set, then those ranges will be contracted to no
-    /// longer cover the removed range.
+    /// # Examples
     ///
-    /// # Panics
+    /// ```
+    /// use rangemap::{Range, RangeSet};
     ///
-    /// Panics if range `start >= end`.
-    pub fn remove<R>(&mut self, range: R)
+    /// let mut set = RangeSet::new();
+    /// set.insert(0..5);
+    /// assert!(set.remove(0..2));
+    /// ```
+    ///
+    /// # See Also
+    ///
+    /// - [`RangeMap::remove`] and [`RangeMap::clear_range`] for the internal map's
+    /// removal semantics. However, this method will not allocate anything to
+    /// return.
+    /// - [`RangeSet::take`] if you want the removed elements
+    ///
+    pub fn remove<R>(&mut self, range: R) -> bool
     where
         R: RangeBounds<T>,
         T: Clone + Ord,
     {
-        // TODO: return whether anything was removed? BTreeSet::remove() -> bool
-        self.map.clear_range(range);
+        let mut removed_ranges = MaybeMap::None;
+        self.map
+            .remove_internal(Range::from(&range), &mut removed_ranges);
+        removed_ranges.into()
     }
 
+    /// Removes a range from the set, returning a set containing the removed
+    /// elements
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rangemap::{Range, RangeSet};
+    ///
+    /// let mut set = RangeSet::new();
+    /// set.insert(0..5);
+    /// let removed = set.take(0..2);
+    ///
+    ///
+    /// ```
+    ///
+    /// # See Also
+    ///
+    /// - [`RangeMap::remove`] and [`RangeMap::clear_range`] for the internal map's
+    /// removal semantics. However, this method will not allocate anything to
+    /// return.
+    /// - [`RangeSet::remove`] if you don't want the removed elements
+    ///
     pub fn take<R>(&mut self, range: R) -> Self
     where
         R: RangeBounds<T>,
         T: Clone + Ord,
     {
-        if let Some(map) = self.map.remove(range) {
-            map.into()
-        } else {
-            Self::new()
+        Self {
+            map: self.map.remove(range).unwrap_or_default(),
         }
     }
 
+    /// Retains only the elements specified by the predicate.
+    ///
+    /// In other words, remove all ranges `f(v)` returns `false`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rangemap::{RangeSet, Range};
+    ///
+    /// let mut set = RangeSet::new();
+    /// set.insert(0..4);
+    /// set.insert(5..9);
+    /// set.insert(10..14);
+    /// set.insert(15..19);
+    /// set.insert(20..24);
+    ///
+    /// // Keep only the ranges with even numbered starts
+    /// set.retain(|r| r.start_value().unwrap() % 2 == 0);
+    ///
+    /// assert!(set.contains(&0));
+    /// assert!(set.contains(&10));
+    /// assert!(set.contains(&12));
+    /// assert!(set.contains(&20));
+    /// assert!(set.contains(&23));
+    ///
+    /// assert!(!set.contains(&15));
+    /// ```
+    ///
+    /// # See Also
+    ///
+    /// - [`RangeMap::retain`], which is called internally
+    ///
     pub fn retain<F>(&mut self, mut f: F)
     where
         T: Ord,
@@ -211,7 +280,31 @@ impl<T> RangeSet<T> {
         self.map.retain(|r, _| f(r))
     }
 
-    // TODO: note clone needs
+    /// Moves all elements from `other` into `Self`, leaving `other` empty.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rangemap::{Range, RangeSet};
+    ///
+    /// let mut a = RangeSet::new();
+    /// a.insert(0..1);
+    /// a.insert(1..2);
+    /// a.insert(2..3);
+    ///
+    /// let mut b = RangeSet::new();
+    /// b.insert(2..3);
+    /// b.insert(3..4);
+    /// b.insert(4..5);
+    ///
+    /// a.append(&mut b);
+    ///
+    /// // Ranges in a should all be coalesced to 0..5
+    /// assert!(a.into_iter().eq(vec![
+    ///     Range::from(0..5)
+    /// ]));
+    /// assert!(b.is_empty());
+    /// ```
     pub fn append(&mut self, other: &mut Self)
     where
         T: Clone + Ord,
@@ -219,6 +312,56 @@ impl<T> RangeSet<T> {
         self.map.append(&mut other.map)
     }
 
+    /// Split the set into two at the given bound. Returns everything including
+    /// and after that bound.
+    ///
+    /// # Examples
+    ///
+    /// # Basic Usage
+    ///
+    /// ```
+    /// use rangemap::{RangeSet, Range, Bound};
+    ///
+    /// let mut a = RangeSet::new();
+    /// a.insert(0..1);
+    /// a.insert(2..3);
+    /// a.insert(4..5);
+    /// a.insert(6..7);
+    ///
+    /// let b = a.split_off(Bound::Included(4));
+    ///
+    /// assert!(a.into_iter().eq(vec![
+    ///     Range::from(0..1),
+    ///     Range::from(2..3),
+    /// ]));
+    /// assert!(b.into_iter().eq(vec![
+    ///     Range::from(4..5),
+    ///     Range::from(6..7),
+    /// ]));
+    /// ```
+    ///
+    /// ## Mixed Bounds
+    ///
+    /// ```
+    /// use rangemap::{RangeSet, Range, Bound};
+    ///
+    /// let mut a = RangeSet::new();
+    /// a.insert(0..7);
+    ///
+    /// let c = a.split_off(Bound::Excluded(4));
+    /// let b = a.split_off(Bound::Included(2));
+    ///
+    /// assert!(a.into_iter().eq(vec![
+    ///     Range::from(0..2)
+    /// ]));
+    /// assert!(b.into_iter().eq(vec![
+    ///     Range::from(2..=4)
+    /// ]));
+    /// assert!(c.into_iter().eq(vec![
+    ///     Range::new(Bound::Excluded(4), Bound::Excluded(7))
+    /// ]));
+    /// ```
+    ///
     pub fn split_off(&mut self, at: Bound<T>) -> Self
     where
         T: Clone + Ord,
@@ -229,24 +372,6 @@ impl<T> RangeSet<T> {
     }
 
     // TODO: split_off_range
-
-    pub fn complement(&self) -> Self
-    where
-        T: Clone + Ord,
-    {
-        // TODO
-        todo!()
-        // // RangeMap::iter_complement MUST return disjoint ranges,
-        // // so we know we can just insert them without extra checking
-        // self.map
-        //     .iter_complement()
-        //     .fold(Self::new(), |mut set, range| {
-        //         set.map.map.insert(Key(range), ());
-        //         set
-        //     })
-    }
-
-    // TODO: subset(&self, range: R) -> Self; slightly faster than ranges(..).filter().collect() because it doesn't need to check insertions
 }
 
 impl<T> Default for RangeSet<T>
@@ -288,90 +413,5 @@ where
 impl<T: PartialEq> PartialEq for RangeSet<T> {
     fn eq(&self, other: &Self) -> bool {
         self.map == other.map
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use alloc::{format, vec, vec::Vec};
-
-    trait RangeSetExt<T> {
-        fn to_vec(&self) -> Vec<Range<T>>;
-    }
-
-    impl<T> RangeSetExt<T> for RangeSet<T>
-    where
-        T: Ord + Clone,
-    {
-        fn to_vec(&self) -> Vec<Range<T>> {
-            self.iter().cloned().collect()
-        }
-    }
-
-    #[test]
-    fn empty_set_is_empty() {
-        let range_set: RangeSet<u32> = RangeSet::new();
-        assert_eq!(range_set.to_vec(), Vec::<Range<u32>>::new());
-    }
-
-    #[test]
-    fn insert_into_empty_map() {
-        let mut range_set: RangeSet<u32> = RangeSet::new();
-        range_set.insert(0..50);
-        assert_eq!(range_set.to_vec(), vec![0..50]);
-    }
-
-    #[test]
-    fn remove_partially_overlapping() {
-        let mut range_set: RangeSet<u32> = RangeSet::new();
-        range_set.insert(0..50);
-        range_set.remove(25..75);
-        assert_eq!(range_set.to_vec(), vec![0..25]);
-    }
-
-    // TODO: gaps_in
-    // #[test]
-    // fn gaps_between_items_floating_inside_outer_range() {
-    //     let mut range_set: RangeSet<u32> = RangeSet::new();
-    //     // 0 1 2 3 4 5 6 7 8 9
-    //     // ◌ ◌ ◌ ◌ ◌ ●-◌ ◌ ◌ ◌
-    //     range_set.insert(5..6);
-    //     // 0 1 2 3 4 5 6 7 8 9
-    //     // ◌ ◌ ◌ ●-◌ ◌ ◌ ◌ ◌ ◌
-    //     range_set.insert(3..4);
-    //     // 0 1 2 3 4 5 6 7 8 9
-    //     // ◌ ◆-------------◇ ◌
-    //     let outer_range = 1..8;
-    //     let mut gaps = range_set.gaps_in(&outer_range);
-    //     // Should yield gaps at start, between items,
-    //     // and at end.
-    //     assert_eq!(gaps.next(), Some(1..3));
-    //     assert_eq!(gaps.next(), Some(4..5));
-    //     assert_eq!(gaps.next(), Some(6..8));
-    //     assert_eq!(gaps.next(), None);
-    //     // Gaps iterator should be fused.
-    //     assert_eq!(gaps.next(), None);
-    //     assert_eq!(gaps.next(), None);
-    // }
-    ///
-    /// impl Debug
-    ///
-
-    #[test]
-    fn set_debug_repr_looks_right() {
-        let mut set: RangeSet<u32> = RangeSet::new();
-
-        // Empty
-        assert_eq!(format!("{:?}", set), "{}");
-
-        // One entry
-        set.insert(2..5);
-        assert_eq!(format!("{:?}", set), "{[2, 5)}");
-
-        // Many entries
-        set.insert(7..=8);
-        set.insert(10..11);
-        assert_eq!(format!("{:?}", set), "{[2, 5), [7, 8], [10, 11)}");
     }
 }

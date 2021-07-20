@@ -15,6 +15,9 @@ pub(crate) use key::Key;
 pub mod iterators;
 mod key;
 
+#[cfg(test)]
+mod tests;
+
 /// # RangeMap
 ///
 /// A map of non-overlapping ranges to values. Inserted ranges will be merged
@@ -717,6 +720,8 @@ impl<K, V> RangeMap<K, V> {
 
     /// Moves all elements from `other` into `Self`, leaving `other` empty.
     ///
+    /// Note thate `V` must be `Clone` in case any ranges need to be split
+    ///
     /// # Examples
     ///
     /// ```
@@ -1068,7 +1073,7 @@ impl<K, V> RangeMap<K, V> {
         removed_ranges.insert(removed_range, value);
     }
 
-    fn remove_internal(&mut self, range: Range<K>, removed_ranges: &mut MaybeMap<K, V>)
+    pub(crate) fn remove_internal(&mut self, range: Range<K>, removed_ranges: &mut MaybeMap<K, V>)
     where
         K: Clone + Ord,
         V: Clone,
@@ -1191,15 +1196,23 @@ where
     }
 }
 
-enum MaybeMap<K, V> {
+pub(crate) enum MaybeMap<K, V> {
+    // Never do anything
     Never,
+
+    // Hold whether the map would contain elements
+    None,
+    Some,
+
+    // Hold actual elements
     Uninitialized,
     Map(BTreeMap<Key<K>, V>),
 }
 impl<K: Ord, V> MaybeMap<K, V> {
     fn insert(&mut self, key: Key<K>, value: V) {
         match self {
-            MaybeMap::Never => {} //NoOp
+            MaybeMap::Never | MaybeMap::Some => {} //NoOp
+            MaybeMap::None => *self = MaybeMap::Some,
             MaybeMap::Uninitialized => {
                 let mut map = BTreeMap::new();
                 map.insert(key, value);
@@ -1222,5 +1235,10 @@ impl<K, V> From<MaybeMap<K, V>> for Option<RangeMap<K, V>> {
         } else {
             None
         }
+    }
+}
+impl<K, V> From<MaybeMap<K, V>> for bool {
+    fn from(map: MaybeMap<K, V>) -> Self {
+        matches!(map, MaybeMap::Some | MaybeMap::Map(_))
     }
 }

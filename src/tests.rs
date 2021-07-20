@@ -29,7 +29,7 @@ fn empty_map_is_empty() {
 fn insert_into_empty_map() {
     let mut range_map: RangeMap<u32, bool> = RangeMap::new();
     range_map.insert(0..50, false);
-    assert_eq!(range_map.to_vec(), vec![(Range::new(0..50), false)]);
+    assert_eq!(range_map.to_vec(), vec![(Range::from(0..50), false)]);
 }
 
 #[test]
@@ -43,7 +43,7 @@ fn new_same_value_immediately_following_stored() {
     range_map.insert(3..5, false);
     // 0 1 2 3 4 5 6 7 8 9
     // ◌ ●-------◌ ◌ ◌ ◌ ◌
-    assert_eq!(range_map.to_vec(), vec![(Range::new(1..5), false)]);
+    assert_eq!(range_map.to_vec(), vec![(Range::from(1..5), false)]);
 }
 
 #[test]
@@ -60,7 +60,7 @@ fn new_different_value_immediately_following_stored() {
     // ◌ ◌ ◌ ◆---◇ ◌ ◌ ◌ ◌
     assert_eq!(
         range_map.to_vec(),
-        vec![(Range::new(1..3), false), (Range::new(3..5), true)]
+        vec![(Range::from(1..3), false), (Range::from(3..5), true)]
     );
 }
 
@@ -75,7 +75,7 @@ fn new_same_value_overlapping_end_of_stored() {
     range_map.insert(3..5, false);
     // 0 1 2 3 4 5 6 7 8 9
     // ◌ ●-------◌ ◌ ◌ ◌ ◌
-    assert_eq!(range_map.to_vec(), vec![(Range::new(1..5), false)]);
+    assert_eq!(range_map.to_vec(), vec![(Range::from(1..5), false)]);
 }
 
 #[test]
@@ -92,7 +92,7 @@ fn new_different_value_overlapping_end_of_stored() {
     // ◌ ◌ ◌ ◆---◇ ◌ ◌ ◌ ◌
     assert_eq!(
         range_map.to_vec(),
-        vec![(Range::new(1..3), false), (Range::new(3..5), true)]
+        vec![(Range::from(1..3), false), (Range::from(3..5), true)]
     );
 }
 
@@ -107,7 +107,7 @@ fn new_same_value_immediately_preceding_stored() {
     range_map.insert(1..3, false);
     // 0 1 2 3 4 5 6 7 8 9
     // ◌ ●-------◌ ◌ ◌ ◌ ◌
-    assert_eq!(range_map.to_vec(), vec![(Range::new(1..5), false)]);
+    assert_eq!(range_map.to_vec(), vec![(Range::from(1..5), false)]);
 }
 
 #[test]
@@ -124,7 +124,7 @@ fn new_different_value_immediately_preceding_stored() {
     // ◌ ◌ ◌ ◆---◇ ◌ ◌ ◌ ◌
     assert_eq!(
         range_map.to_vec(),
-        vec![(Range::new(1..3), false), (Range::new(3..5), true)]
+        vec![(Range::from(1..3), false), (Range::from(3..5), true)]
     );
 }
 
@@ -139,7 +139,7 @@ fn new_same_value_wholly_inside_stored() {
     range_map.insert(2..4, false);
     // 0 1 2 3 4 5 6 7 8 9
     // ◌ ●-------◌ ◌ ◌ ◌ ◌
-    assert_eq!(range_map.to_vec(), vec![(Range::new(1..5), false)]);
+    assert_eq!(range_map.to_vec(), vec![(Range::from(1..5), false)]);
 }
 
 #[test]
@@ -158,9 +158,9 @@ fn new_different_value_wholly_inside_stored() {
     assert_eq!(
         range_map.to_vec(),
         vec![
-            (Range::new(1..2), true),
-            (Range::new(2..4), false),
-            (Range::new(4..5), true)
+            (Range::from(1..2), true),
+            (Range::from(2..4), false),
+            (Range::from(4..5), true)
         ]
     );
 }
@@ -179,7 +179,7 @@ fn replace_at_end_of_existing_range_should_coalesce() {
     range_map.insert(3..5, false);
     // 0 1 2 3 4 5 6 7 8 9
     // ◌ ●-------◌ ◌ ◌ ◌ ◌
-    assert_eq!(range_map.to_vec(), vec![(Range::new(1..5), false)]);
+    assert_eq!(range_map.to_vec(), vec![(Range::from(1..5), false)]);
 }
 
 #[test]
@@ -237,7 +237,7 @@ fn get_key_value() {
     range_map.insert(0..50, false);
     assert_eq!(
         range_map.get_range_value(&49),
-        Some((&Range::new(0..50), &false))
+        Some((&Range::from(0..50), &false))
     );
     assert_eq!(range_map.get_range_value(&50), None);
 }
@@ -258,7 +258,7 @@ fn remove_non_covered_range_before_stored() {
     let mut range_map: RangeMap<u32, bool> = RangeMap::new();
     range_map.insert(25..75, false);
     range_map.remove(0..25);
-    assert_eq!(range_map.to_vec(), vec![(Range::new(25..75), false)]);
+    assert_eq!(range_map.to_vec(), vec![(Range::from(25..75), false)]);
 }
 
 #[test]
@@ -266,7 +266,7 @@ fn remove_non_covered_range_after_stored() {
     let mut range_map: RangeMap<u32, bool> = RangeMap::new();
     range_map.insert(25..75, false);
     range_map.remove(75..100);
-    assert_eq!(range_map.to_vec(), vec![(Range::new(25..75), false)]);
+    assert_eq!(range_map.to_vec(), vec![(Range::from(25..75), false)]);
 }
 
 #[test]
@@ -274,7 +274,7 @@ fn remove_overlapping_start_of_stored() {
     let mut range_map: RangeMap<u32, bool> = RangeMap::new();
     range_map.insert(25..75, false);
     range_map.remove(0..30);
-    assert_eq!(range_map.to_vec(), vec![(Range::new(30..75), false)]);
+    assert_eq!(range_map.to_vec(), vec![(Range::from(30..75), false)]);
 }
 
 #[test]
@@ -284,7 +284,7 @@ fn remove_middle_of_stored() {
     range_map.remove(30..70);
     assert_eq!(
         range_map.to_vec(),
-        vec![(Range::new(25..30), false), (Range::new(70..75), false)]
+        vec![(Range::from(25..30), false), (Range::from(70..75), false)]
     );
 }
 
@@ -293,7 +293,7 @@ fn remove_overlapping_end_of_stored() {
     let mut range_map: RangeMap<u32, bool> = RangeMap::new();
     range_map.insert(25..75, false);
     range_map.remove(70..100);
-    assert_eq!(range_map.to_vec(), vec![(Range::new(25..70), false)]);
+    assert_eq!(range_map.to_vec(), vec![(Range::from(25..70), false)]);
 }
 
 #[test]
@@ -324,7 +324,7 @@ fn remove_superset_of_stored() {
 //     // ◌ ◆-------------◇ ◌
 //     let mut gaps = range_map.gaps_in(1..8);
 //     // Should yield the entire outer range.
-//     assert_eq!(gaps.next(), Some(Range::new(1..8)));
+//     assert_eq!(gaps.next(), Some(Range::from(1..8)));
 //     assert_eq!(gaps.next(), None);
 //     // Gaps iterator should be fused.
 //     assert_eq!(gaps.next(), None);
@@ -509,7 +509,7 @@ fn remove_superset_of_stored() {
 //     let outer_range = 1..4;
 //     let mut gaps = range_map.gaps_in(1..4);
 //     // Should yield the entire outer range.
-//     assert_eq!(gaps.next(), Some(Range::new(1..4).as_ref()));
+//     assert_eq!(gaps.next(), Some(Range::from(1..4).as_ref()));
 //     assert_eq!(gaps.next(), None);
 //     // Gaps iterator should be fused.
 //     assert_eq!(gaps.next(), None);

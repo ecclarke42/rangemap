@@ -2,6 +2,22 @@
 
 use super::RangeSet;
 
+// TODO
+// pub fn is_disjoint(&self, other: &Self) -> bool {
+//     // self.intersection(other).next().is_none()
+//     todo!()
+//     // TODO
+// }
+
+// pub fn is_subset(&self, other: &Self) -> bool {
+//     todo!()
+//     // TODO
+// }
+
+// pub fn is_superset(&self, other: &Self) -> bool {
+//     other.is_subset(self)
+// }
+
 /// Set Difference
 impl<T: Ord + Clone> core::ops::Sub<&RangeSet<T>> for &RangeSet<T> {
     type Output = RangeSet<T>;

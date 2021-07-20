@@ -157,7 +157,7 @@ impl<K, V> RangeMap<K, V> {
     ///
     /// let mut map = RangeMap::new();
     /// map.insert(0..1, "a");
-    /// assert_eq!(map.get_range_value(&0), Some((&Range::new(0..1), &"a")));
+    /// assert_eq!(map.get_range_value(&0), Some((&Range::from(0..1), &"a")));
     /// assert_eq!(map.get_range_value(&2), None);
     /// ```
     pub fn get_range_value(&self, at: &K) -> Option<(&Range<K>, &V)>
@@ -210,7 +210,7 @@ impl<K, V> RangeMap<K, V> {
     /// map.insert(15..30, "b");
     /// map.insert(35..90, "c");
     ///
-    /// assert_eq!(map.bounds(), Some(Range::new(0..90).as_ref()));
+    /// assert_eq!(map.bounds(), Some(Range::from(0..90).as_ref()));
     /// ```
     pub fn bounds(&self) -> Option<Range<&K>> {
         let mut iter = self.map.iter();
@@ -352,7 +352,7 @@ impl<K, V> RangeMap<K, V> {
     /// assert_eq!(map[&2], "a");
     /// assert_eq!(map[&4], "b");
     /// assert_eq!(map[&7], "a");
-    /// assert!(out.into_iter().eq(vec![(Range::new(3..6), "a")]));
+    /// assert!(out.into_iter().eq(vec![(Range::from(3..6), "a")]));
     ///
     /// ```
     ///
@@ -365,7 +365,7 @@ impl<K, V> RangeMap<K, V> {
     /// map.insert(0..10, "a");
     /// map.insert(10..20, "a");
     ///
-    /// assert!(map.into_iter().eq(vec![(Range::new(0..20), "a")]));
+    /// assert!(map.into_iter().eq(vec![(Range::from(0..20), "a")]));
     ///
     /// ```
     ///
@@ -385,7 +385,7 @@ impl<K, V> RangeMap<K, V> {
         V: Clone + Eq,
     {
         // assert!(range.start_bound() <= range.end_bound());
-        let range = Range::new(range);
+        let range = Range::from(&range);
         let mut removed_ranges = MaybeMap::Uninitialized;
         self.insert_internal(range, value, &mut removed_ranges);
         removed_ranges.into()
@@ -436,7 +436,7 @@ impl<K, V> RangeMap<K, V> {
     /// map.set(0..10, "a");
     /// map.set(10..20, "a");
     ///
-    /// assert!(map.into_iter().eq(vec![(Range::new(0..20), "a")]))
+    /// assert!(map.into_iter().eq(vec![(Range::from(0..20), "a")]))
     ///
     /// ```
     ///
@@ -454,7 +454,7 @@ impl<K, V> RangeMap<K, V> {
         K: Clone + Ord,
         V: Clone + Eq,
     {
-        let range = Range::new(range);
+        let range = Range::from(&range);
         let mut removed_ranges = MaybeMap::Never;
         self.insert_internal(range, value, &mut removed_ranges);
     }
@@ -488,7 +488,7 @@ impl<K, V> RangeMap<K, V> {
         V: Clone + Eq,
     {
         // Get the ranges before and after this one
-        let range = Range::new(range);
+        let range = Range::from(&range);
 
         // Check for any overlaps
         let overlapped = if let Some(upper_bound) = range.end.after() {
@@ -526,11 +526,11 @@ impl<K, V> RangeMap<K, V> {
     /// map.insert_in_gaps(0..30, "b");
     ///
     /// assert!(map.into_iter().eq(vec![
-    ///     (Range::new(0..5), "b"),
-    ///     (Range::new(5..10), "a"),
-    ///     (Range::new(10..15), "b"),
-    ///     (Range::new(15..20), "a"),
-    ///     (Range::new(20..30), "b"),
+    ///     (Range::from(0..5), "b"),
+    ///     (Range::from(5..10), "a"),
+    ///     (Range::from(10..15), "b"),
+    ///     (Range::from(15..20), "a"),
+    ///     (Range::from(20..30), "b"),
     /// ]));
     ///
     /// ```
@@ -550,7 +550,7 @@ impl<K, V> RangeMap<K, V> {
         K: Clone + Ord,
         V: Clone + Eq,
     {
-        let mut range = Range::new(range);
+        let mut range = Range::from(&range);
 
         // In case this is an empty map, exit early
         if self.map.is_empty() {
@@ -677,7 +677,7 @@ impl<K, V> RangeMap<K, V> {
         V: Clone,
     {
         let mut removed_ranges = MaybeMap::Uninitialized;
-        self.remove_internal(Range::new(range), &mut removed_ranges);
+        self.remove_internal(Range::from(&range), &mut removed_ranges);
         removed_ranges.into()
     }
 
@@ -712,7 +712,7 @@ impl<K, V> RangeMap<K, V> {
         V: Clone,
     {
         let mut removed_ranges = MaybeMap::Never;
-        self.remove_internal(Range::new(range), &mut removed_ranges);
+        self.remove_internal(Range::from(&range), &mut removed_ranges);
     }
 
     /// Moves all elements from `other` into `Self`, leaving `other` empty.
@@ -794,12 +794,12 @@ impl<K, V> RangeMap<K, V> {
     /// let b = a.split_off(Bound::Included(2));
     ///
     /// assert!(a.into_iter().eq(vec![
-    ///     (Range::new(0..1), "a"),
-    ///     (Range::new(1..2), "b"),
+    ///     (Range::from(0..1), "a"),
+    ///     (Range::from(1..2), "b"),
     /// ]));
     /// assert!(b.into_iter().eq(vec![
-    ///     (Range::new(2..3), "c"),
-    ///     (Range::new(3..4), "d"),
+    ///     (Range::from(2..3), "c"),
+    ///     (Range::from(3..4), "d"),
     /// ]));
     /// ```
     ///

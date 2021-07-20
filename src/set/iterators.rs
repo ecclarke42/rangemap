@@ -230,13 +230,37 @@ impl<T> ExactSizeIterator for Iter<'_, T> {
     }
 }
 
-pub struct IntoIter<T>(crate::map::iterators::IntoIter<T, ()>);
+impl<T> IntoIterator for RangeSet<T> {
+    type Item = Range<T>;
+    type IntoIter = IntoIter<T>;
 
+    // TODO: docs
+    fn into_iter(self) -> Self::IntoIter {
+        IntoIter(self.map.into_iter())
+    }
+}
+
+pub struct IntoIter<T>(crate::map::iterators::IntoIter<T, ()>);
 impl<T: fmt::Debug> fmt::Debug for IntoIter<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
     }
 }
+impl<T> Iterator for IntoIter<T> {
+    type Item = Range<T>;
+    fn next(&mut self) -> Option<Range<T>> {
+        self.0.next().map(|(range, _)| range)
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.0.size_hint()
+    }
+}
+impl<T> DoubleEndedIterator for IntoIter<T> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.0.next_back().map(|(range, _)| range)
+    }
+}
+impl<T> FusedIterator for IntoIter<T> {}
 
 // TODO: Implement Difference Search method
 

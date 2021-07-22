@@ -7,7 +7,7 @@ use crate::{
 };
 
 pub mod iterators;
-// pub mod ops;
+pub mod ops;
 
 #[cfg(test)]
 mod tests;
@@ -54,7 +54,7 @@ mod tests;
 ///
 #[derive(Clone)]
 pub struct RangeSet<T> {
-    map: RangeMap<T, ()>,
+    pub(crate) map: RangeMap<T, ()>,
 }
 
 impl<T> RangeSet<T> {
@@ -372,6 +372,17 @@ impl<T> RangeSet<T> {
     }
 
     // TODO: split_off_range
+}
+
+impl<T: Clone + Ord> RangeSet<&T> {
+    pub fn cloned(&self) -> RangeSet<T> {
+        RangeSet {
+            map: RangeMap {
+                map: self.map.map.iter().map(|(k, _)| (k.cloned(), ())).collect(),
+                store: alloc::vec::Vec::with_capacity(self.map.store.len()),
+            },
+        }
+    }
 }
 
 impl<T> Default for RangeSet<T>

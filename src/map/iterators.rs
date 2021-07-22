@@ -1,10 +1,14 @@
 use core::{
     fmt::{self, Debug},
     iter::{FromIterator, FusedIterator},
+    ops::Bound::*,
 };
 
 use super::Key;
-use crate::{Range, RangeBounds, RangeMap};
+use crate::{
+    bounds::{EndBound, StartBound},
+    Range, RangeBounds, RangeMap, RangeSet,
+};
 
 // TODO: all doctests
 
@@ -183,19 +187,89 @@ impl<K, V> RangeMap<K, V> {
 
     // fn range_bounds(&self) -> R?
 
-    // pub fn iter_complement(&self) -> impl Iterator<Item = Range<K>>
+    // TODO: remove K: Clone?
+    pub fn iter_subset<R>(&self, range: R) -> IterSubset<'_, K, V>
+    where
+        R: RangeBounds<K>,
+        K: Clone + Ord,
+    {
+        let range = Range::new(range.start_bound(), range.end_bound()).cloned();
+        IterSubset(Some(match (&range.start, &range.end) {
+            (StartBound(Unbounded), EndBound(Unbounded)) => IterSubsetInner::Full(self.iter()),
+            (StartBound(Unbounded), bounded_end) => IterSubsetInner::Partial {
+                before: None,
+                iter: self.map.range(..bounded_end.after().unwrap().cloned()),
+                range,
+            },
+            (bounded_start, EndBound(Unbounded)) => IterSubsetInner::Partial {
+                before: Some(self.map.range(..bounded_start.clone())),
+                iter: self.map.range(bounded_start.clone()..),
+                range,
+            },
+            (bounded_start, bounded_end) => IterSubsetInner::Partial {
+                before: Some(self.map.range(..bounded_start.clone())),
+                iter: self
+                    .map
+                    .range(bounded_start.clone()..bounded_end.after().unwrap().cloned()),
+                range,
+            },
+        }))
+    }
 
-    // /// Gets an iterator over all maximally-sized gaps between ranges in the map
-    // ///
-    // /// NOTE: Empty regions before and after those stored in this map (i.e.
-    // /// before the first range and after the last range) will not be included
-    // /// in this iterator
-    // pub fn gaps(&self) -> Gaps<'_, K, V> {
-    //     Gaps {
-    //         iter: self.iter(),
-    //         prev: None,
-    //     }
-    // }
+    /// Create a `RangeMap` referencing a subset range in `self`
+    pub fn subset<R>(&self, range: R) -> RangeMap<K, &V>
+    where
+        R: RangeBounds<K>,
+        K: Clone + Ord,
+    {
+        RangeMap {
+            map: self.iter_subset(range).map(|(r, v)| (Key(r), v)).collect(),
+            store: alloc::vec::Vec::with_capacity(self.store.len()),
+        }
+    }
+
+    pub fn iter_complement(&self) -> IterComplement<'_, K, V> {
+        IterComplement(Some(ComplementInner::Before {
+            first: self.ranges().next(),
+            iter: self.iter(),
+        }))
+    }
+
+    pub fn complement(&self) -> RangeSet<&K>
+    where
+        K: Ord,
+    {
+        RangeSet {
+            map: RangeMap {
+                map: self.iter_complement().map(|r| (Key(r), ())).collect(),
+                store: alloc::vec::Vec::with_capacity(self.store.len()),
+            },
+        }
+    }
+
+    /// Gets an iterator over all maximally-sized gaps between ranges in the map
+    ///
+    /// NOTE: Empty regions before and after those stored in this map (i.e.
+    /// before the first range and after the last range) will not be included
+    /// in this iterator
+    pub fn iter_gaps(&self) -> Gaps<'_, K, V> {
+        Gaps {
+            iter: self.iter(),
+            prev: None,
+        }
+    }
+
+    pub fn gaps(&self) -> RangeSet<&K>
+    where
+        K: Ord,
+    {
+        RangeSet {
+            map: RangeMap {
+                map: self.iter_gaps().map(|r| (Key(r), ())).collect(),
+                store: alloc::vec::Vec::with_capacity(self.store.len()),
+            },
+        }
+    }
 
     // /// Gets an iterator over all maximally-sized gaps between ranges in the map,
     // /// further bounded by an outer range
@@ -603,56 +677,187 @@ impl<K, V> ExactSizeIterator for ValuesMut<'_, K, V> {
 }
 impl<K, V> FusedIterator for ValuesMut<'_, K, V> {}
 
-pub struct Gaps<'a, K, V> {
-    iter: Iter<'a, K, V>,
-    prev: Option<&'a Range<K>>,
+pub struct IterSubset<'a, K, V>(Option<IterSubsetInner<'a, K, V>>);
+
+enum IterSubsetInner<'a, K, V> {
+    Full(Iter<'a, K, V>),
+
+    Partial {
+        before: Option<alloc::collections::btree_map::Range<'a, Key<K>, V>>,
+        iter: alloc::collections::btree_map::Range<'a, Key<K>, V>,
+        range: Range<K>,
+    },
 }
 
-impl<'a, K, V> Iterator for Gaps<'a, K, V>
-where
-    K: Ord + Clone,
-{
-    type Item = Range<K>;
+impl<'a, K: Clone + Ord, V> Iterator for IterSubset<'a, K, V> {
+    type Item = (Range<K>, &'a V);
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some((next, _)) = self.iter.next() {
-            if let Some(prev) = self.prev {
-                // Get the adjacent bound to the end of the previous range
+        match self.0.take()? {
+            IterSubsetInner::Full(mut iter) => {
+                let next = iter.next().map(|(r, v)| (r.clone(), v));
+                if next.is_some() {
+                    self.0.insert(IterSubsetInner::Full(iter));
+                }
+                next
+            }
+            IterSubsetInner::Partial {
+                mut before,
+                mut iter,
+                range,
+            } => {
+                // Check the first previous range from start to see if it
+                // overlaps the given outer range, consuming `before` as there
+                // will only be 1 options there
+                if let Some((Key(r), v)) = before.take().map(|mut x| x.next_back()).flatten() {
+                    let mut r = r.clone();
 
-                let start = prev.bound_after()?.cloned(); // If none, no more gaps (this extends forwards to infinity)
-                let end = next
-                    .bound_before()
-                    .expect("Unbounded internal range in RangeMap")
-                    .cloned();
-                self.prev = Some(next);
-                Some(Range { start, end })
-            } else {
-                // No previous bound means first gap
+                    // Check if this overlaps the outer range
+                    // (range iterator means this must start before range start)
+                    if r.end.cmp_start(&range.start).is_gt() {
+                        if r.start < range.start {
+                            r.start = range.start.clone();
+                        };
 
-                // Get the adjacent bound to the end of the first range
-                let start = next.bound_after()?.cloned(); // If none, no more gaps (this extends forwards to infinity)
+                        self.0.insert(IterSubsetInner::Partial {
+                            before: None,
+                            iter,
+                            range,
+                        });
+                        return Some((r, v));
+                    }
+                }
 
-                // Check if we have another range
-                if let Some((next, _)) = self.iter.next() {
-                    // Store the end of the next segment for next iteration
-                    let end = next
-                        .bound_before()
-                        .expect("Unbounded internal range in RangeMap")
-                        .cloned();
+                // Otherwise, continue marching through `iter` until we reach
+                // `range.end`
+                let (Key(r), v) = iter.next()?;
+                let mut r = r.clone();
 
-                    self.prev = Some(next);
-                    Some(Range { start, end })
-                } else {
-                    // Only one item (no gaps)
+                if r.start.as_ref() > range.end.after().unwrap() {
+                    // Finished!
                     None
+                } else {
+                    if r.end > range.end {
+                        // If this extends past the end, it must be our last item
+                        r.end = range.end;
+                    } else {
+                        // Otherwise, save everything for next iteration
+                        self.0.insert(IterSubsetInner::Partial {
+                            before: None,
+                            iter,
+                            range,
+                        });
+                    }
+
+                    Some((r, v))
                 }
             }
-        } else {
-            None
         }
     }
 }
 
-impl<K: Clone + Ord, V> FusedIterator for Gaps<'_, K, V> {}
+pub struct Gaps<'a, K, V> {
+    iter: Iter<'a, K, V>,
+    prev: Option<Range<&'a K>>,
+}
+
+impl<'a, K, V> Iterator for Gaps<'a, K, V>
+where
+    K: Ord,
+{
+    type Item = Range<&'a K>;
+    fn next(&mut self) -> Option<Self::Item> {
+        let next = self.iter.next()?.0.as_ref();
+
+        if let Some(prev) = self.prev.take() {
+            // Get the adjacent bound to the end of the previous range
+
+            let start = prev.bound_after()?.cloned(); // If none, no more gaps (this extends forwards to infinity)
+            let end = next
+                .bound_before()
+                .expect("Unbounded internal range in RangeMap")
+                .cloned();
+            self.prev.insert(next);
+            Some(Range { start, end })
+        } else {
+            // No previous bound means first gap
+
+            // Get the adjacent bound to the end of the first range
+            // If none, no more gaps (this extends forwards to infinity)
+            let start = next.borrow_bound_after()?;
+
+            // Check if we have another range, otherwise only one item (no gaps)
+            let next = self.iter.next()?.0.as_ref();
+
+            // Store the end of the next segment for next iteration
+            // This bound should always exist, because this is not the first
+            // range
+            let end = next.borrow_bound_before().unwrap();
+
+            // Hold on to next
+            self.prev = Some(next);
+            Some(Range { start, end })
+        }
+    }
+}
+
+impl<K: Ord, V> FusedIterator for Gaps<'_, K, V> {}
+
+pub struct IterComplement<'a, K, V>(Option<ComplementInner<'a, K, V>>);
+enum ComplementInner<'a, K, V> {
+    Before {
+        first: Option<&'a Range<K>>,
+        iter: Iter<'a, K, V>,
+    },
+    Gaps(Gaps<'a, K, V>), // TODO: make gaps generic over iterator? Then Before can use Peekable
+}
+
+impl<'a, K, V> Iterator for IterComplement<'a, K, V>
+where
+    K: Ord,
+{
+    type Item = Range<&'a K>;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.0.take()? {
+            ComplementInner::Before { first, iter } => {
+                if let Some(first) = first {
+                    let mut gaps = Gaps { iter, prev: None };
+                    let out = first
+                        .bound_before()
+                        .map(|end| Range {
+                            start: StartBound(Unbounded),
+                            end,
+                        })
+                        .or_else(|| gaps.next());
+
+                    self.0.insert(ComplementInner::Gaps(gaps));
+                    out
+                } else {
+                    None
+                }
+            }
+
+            // Use Gaps iterator to iterate all inner gaps
+            ComplementInner::Gaps(mut gaps) => {
+                if let Some(next) = gaps.next() {
+                    // In the gaps iterator
+                    self.0.insert(ComplementInner::Gaps(gaps));
+                    Some(next)
+                } else {
+                    // After the last item in gaps, try to use the `prev`
+                    // element to get the end bound, otherwise no more gaps!
+                    gaps.prev
+                        .map(|p| {
+                            p.borrow_bound_after().map(|start| Range {
+                                start,
+                                end: EndBound(Unbounded),
+                            })
+                        })
+                        .flatten()
+                }
+            }
+        }
+    }
+}
 
 // pub struct GapsIn<'a, K, V, R> {
 //     iter: Iter<'a, K, V>,

@@ -5,6 +5,12 @@ use core::{cmp::Ordering, fmt::Debug, ops::Bound};
 #[derive(Clone)]
 pub(crate) struct Key<T>(pub(crate) Range<T>);
 
+impl<T: Clone> Key<&T> {
+    pub(crate) fn cloned(&self) -> Key<T> {
+        Key(self.0.cloned())
+    }
+}
+
 impl<T: Copy> Copy for Key<T> {}
 impl<T: Debug> Debug for Key<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -36,6 +42,20 @@ impl<T> core::borrow::Borrow<Bound<T>> for Key<T> {
         &self.0.start.0
     }
 }
+
+// impl<'a, T> core::borrow::Borrow<Bound<&'a T>> for Key<&'a T> {
+//     fn borrow(&self) -> &Bound<&'a T> {
+//         // self.0.start.as_bound_inner_ref();
+
+//         &self.0.start.0
+//         // match &self.0.start.0 {
+//         //     Bound::Included(x) => &Bound::Included(x),
+//         //     Bound::Excluded(x) => &Bound::Excluded(x),
+//         //     Bound::Unbounded => &Bound::Unbounded,
+//         // }
+//     }
+// }
+
 impl<T: PartialEq> PartialEq for Key<T> {
     fn eq(&self, other: &Key<T>) -> bool {
         self.0.start == other.0.start

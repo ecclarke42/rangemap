@@ -896,6 +896,10 @@ impl<K, V> RangeMap<K, V> {
     }
 
     // TODO: split_off_range
+    // /// Split the map into two, removing from `self` and returning everything in the given range
+    // pub fn split_off_range<R>(&mut self, range: R) where R: RangeBounds, K: Clone + Ord, V: Clone {
+
+    // }
 
     /// Internal implementation for [`insert`], [`set`], and similar
     fn insert_internal(

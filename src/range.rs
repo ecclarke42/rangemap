@@ -348,6 +348,15 @@ impl<T> Range<T> {
     // }
 }
 
+impl<T: Clone> Range<&T> {
+    pub(crate) fn cloned(&self) -> Range<T> {
+        Range {
+            start: self.start.cloned(),
+            end: self.end.cloned(),
+        }
+    }
+}
+
 /// Crate Methods
 impl<T> Range<T> {
     /// Obtain the adjacent end bound before the start of this range (if it
@@ -423,6 +432,8 @@ impl<T: Ord> From<core::ops::RangeToInclusive<T>> for Range<T> {
         Range::new(Unbounded, Included(r.end))
     }
 }
+
+// TODO: no clone, return a Range<&T>
 
 impl<T: Ord + Clone, R: core::ops::RangeBounds<T>> From<&R> for Range<T> {
     fn from(r: &R) -> Self {

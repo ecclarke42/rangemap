@@ -1,54 +1,151 @@
 use core::fmt::{self, Debug};
-use core::ops::Range;
-use core::prelude::v1::*;
 
-use crate::RangeMap;
+use crate::{
+    map::{Key, MaybeMap},
+    Bound::{self, *},
+    Range, RangeBounds, RangeMap,
+};
 
+pub mod iterators;
+pub mod ops;
+
+#[cfg(test)]
+mod tests;
+
+/// # RangeSet
+///
+/// A set based on a [`RangeMap`]. Like [`RangeMap`], adjacent ranges will be
+/// merged into a single range.
+///
+/// See [`RangeMap`]'s documentation for more details on implementation. The
+/// internal representation of this `struct` is is a `RangeMap<T, ()>`
+///
+/// # Examples
+///
+/// ```
+/// use rangemap::{Range, RangeSet};
+///
+/// let mut ranges = RangeSet::new();
+///
+/// // Add some ranges
+/// ranges.insert(0..5);
+/// ranges.insert(5..10); // Note, this will be merged with 0..5!
+/// ranges.insert(20..25);
+///
+/// // Check if a point is covered
+/// assert!(ranges.contains(&7));
+/// assert!(!ranges.contains(&12));
+///
+/// // Remove a range (or parts of some ranges)
+/// assert!(ranges.contains(&5));
+/// assert!(ranges.contains(&24));
+/// ranges.remove(3..6);
+/// ranges.remove(22..);
+/// assert!(!ranges.contains(&5));
+/// assert!(!ranges.contains(&24));
+///
+/// // Check which ranges are covered
+/// assert!(ranges.into_iter().eq(vec![
+///     Range::from(0..3),
+///     Range::from(6..10),
+///     Range::from(20..22),
+/// ]));
+/// ```
+///
 #[derive(Clone)]
-/// A set whose items are stored as (half-open) ranges bounded
-/// inclusively below and exclusively above `(start..end)`.
-///
-/// See [`RangeMap`]'s documentation for more details.
-///
-/// [`RangeMap`]: struct.RangeMap.html
 pub struct RangeSet<T> {
-    rm: RangeMap<T, ()>,
+    pub(crate) map: RangeMap<T, ()>,
 }
 
-impl<T> Default for RangeSet<T>
-where
-    T: Ord + Clone,
-{
-    fn default() -> Self {
-        RangeSet::new()
-    }
-}
-
-impl<T> RangeSet<T>
-where
-    T: Ord + Clone,
-{
+impl<T> RangeSet<T> {
     /// Makes a new empty `RangeSet`.
-    pub fn new() -> Self {
+    pub fn new() -> Self
+    where
+        T: Ord,
+    {
         RangeSet {
-            rm: RangeMap::new(),
+            map: RangeMap::new(),
         }
     }
 
-    /// Returns a reference to the range covering the given key, if any.
-    pub fn get(&self, value: &T) -> Option<&Range<T>> {
-        self.rm.get_key_value(value).map(|(range, _)| range)
+    /// Make a new `RangeSet` with a single range present, representing all
+    /// possible values.
+    ///
+    /// ```
+    /// use rangemap::RangeSet;
+    ///
+    /// // Thus, this
+    /// let full = RangeSet::<u32>::full();
+    ///
+    /// // Is equivalent to
+    /// let mut manual = RangeSet::new();
+    /// manual.insert(..);
+    ///
+    /// assert_eq!(full, manual);
+    /// ```
+    pub fn full() -> Self
+    where
+        T: Ord,
+    {
+        let mut set = Self::new();
+        set.map
+            .map
+            .insert(Key(Range::new(Unbounded, Unbounded)), ());
+        set
+    }
+
+    /// Clears the set, removing all elements.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rangemap::RangeSet;
+    ///
+    /// let mut set = RangeSet::new();
+    /// set.insert(0..1);
+    /// set.clear();
+    /// assert!(set.is_empty());
+    /// ```
+    pub fn clear(&mut self) {
+        self.map.clear()
     }
 
     /// Returns `true` if any range in the set covers the specified value.
-    pub fn contains(&self, value: &T) -> bool {
-        self.rm.contains_key(value)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rangemap::RangeSet;
+    ///
+    /// let mut set = RangeSet::new();
+    /// set.insert(0..5);
+    /// assert!(set.contains(&3));
+    /// ```
+    pub fn contains(&self, value: &T) -> bool
+    where
+        T: Clone + Ord,
+    {
+        self.map.contains(value)
     }
 
-    /// Gets an ordered iterator over all ranges,
-    /// ordered by range.
-    pub fn iter(&self) -> impl Iterator<Item = &Range<T>> {
-        self.rm.iter().map(|(range, _v)| range)
+    /// Returns a reference to the range covering the given value, if any.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rangemap::{Range, RangeSet};
+    ///
+    /// let mut set = RangeSet::new();
+    /// set.insert(0..5);
+    ///
+    /// assert_eq!(set.get_range_for(&3), Some(&Range::from(0..5)));
+    /// assert!(set.get_range_for(&6).is_none());
+    /// ```
+    pub fn get_range_for(&self, value: &T) -> Option<&Range<T>>
+    where
+        T: Clone + Ord,
+    {
+        self.map.get_range_value(value).map(|(range, _)| range)
     }
 
     /// Insert a range into the set.
@@ -57,60 +154,258 @@ where
     /// any existing range, then the ranges will be coalesced into
     /// a single contiguous range.
     ///
-    /// # Panics
+    /// # Examples
     ///
-    /// Panics if range `start >= end`.
-    pub fn insert(&mut self, range: Range<T>) {
-        self.rm.insert(range, ());
+    /// ```
+    /// use rangemap::{Range, RangeSet};
+    ///
+    /// let mut set = RangeSet::new();
+    /// set.insert(0..5);
+    /// assert!(!set.is_empty())
+    /// ```
+    ///
+    /// # See Also
+    ///
+    /// - [`RangeMap::insert`] and [`RangeMap::set`] for the internal map's
+    /// insertion semantics. Because values are always `()` and returning
+    /// overwritten values is not necessary, this method uses `set`.
+    ///
+    pub fn insert<R>(&mut self, range: R)
+    where
+        R: RangeBounds<T>,
+        T: Clone + Ord,
+    {
+        self.map.set(range, ())
     }
 
-    /// Removes a range from the set, if all or any of it was present.
+    /// Removes a range from the set returning if all or any of it was present.
     ///
-    /// If the range to be removed _partially_ overlaps any ranges
-    /// in the set, then those ranges will be contracted to no
-    /// longer cover the removed range.
+    /// # Examples
     ///
-    /// # Panics
+    /// ```
+    /// use rangemap::{Range, RangeSet};
     ///
-    /// Panics if range `start >= end`.
-    pub fn remove(&mut self, range: Range<T>) {
-        self.rm.remove(range);
+    /// let mut set = RangeSet::new();
+    /// set.insert(0..5);
+    /// assert!(set.remove(0..2));
+    /// ```
+    ///
+    /// # See Also
+    ///
+    /// - [`RangeMap::remove`] and [`RangeMap::clear_range`] for the internal map's
+    /// removal semantics. However, this method will not allocate anything to
+    /// return.
+    /// - [`RangeSet::take`] if you want the removed elements
+    ///
+    pub fn remove<R>(&mut self, range: R) -> bool
+    where
+        R: RangeBounds<T>,
+        T: Clone + Ord,
+    {
+        let mut removed_ranges = MaybeMap::None;
+        self.map
+            .remove_internal(Range::from(&range), &mut removed_ranges);
+        removed_ranges.into()
     }
 
-    /// Gets an iterator over all the maximally-sized ranges
-    /// contained in `outer_range` that are not covered by
-    /// any range stored in the set.
+    /// Removes a range from the set, returning a set containing the removed
+    /// elements
     ///
-    /// The iterator element type is `Range<T>`.
+    /// # Examples
     ///
-    /// NOTE: Calling `gaps` eagerly finds the first gap,
-    /// even if the iterator is never consumed.
-    pub fn gaps<'a>(&'a self, outer_range: &'a Range<T>) -> Gaps<'a, T> {
-        Gaps {
-            inner: self.rm.gaps(outer_range),
+    /// ```
+    /// use rangemap::{Range, RangeSet};
+    ///
+    /// let mut set = RangeSet::new();
+    /// set.insert(0..5);
+    /// let removed = set.take(0..2);
+    ///
+    ///
+    /// ```
+    ///
+    /// # See Also
+    ///
+    /// - [`RangeMap::remove`] and [`RangeMap::clear_range`] for the internal map's
+    /// removal semantics. However, this method will not allocate anything to
+    /// return.
+    /// - [`RangeSet::remove`] if you don't want the removed elements
+    ///
+    pub fn take<R>(&mut self, range: R) -> Self
+    where
+        R: RangeBounds<T>,
+        T: Clone + Ord,
+    {
+        Self {
+            map: self.map.remove(range).unwrap_or_default(),
+        }
+    }
+
+    /// Retains only the elements specified by the predicate.
+    ///
+    /// In other words, remove all ranges `f(v)` returns `false`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rangemap::{RangeSet, Range};
+    ///
+    /// let mut set = RangeSet::new();
+    /// set.insert(0..4);
+    /// set.insert(5..9);
+    /// set.insert(10..14);
+    /// set.insert(15..19);
+    /// set.insert(20..24);
+    ///
+    /// // Keep only the ranges with even numbered starts
+    /// set.retain(|r| r.start_value().unwrap() % 2 == 0);
+    ///
+    /// assert!(set.contains(&0));
+    /// assert!(set.contains(&10));
+    /// assert!(set.contains(&12));
+    /// assert!(set.contains(&20));
+    /// assert!(set.contains(&23));
+    ///
+    /// assert!(!set.contains(&15));
+    /// ```
+    ///
+    /// # See Also
+    ///
+    /// - [`RangeMap::retain`], which is called internally
+    ///
+    pub fn retain<F>(&mut self, mut f: F)
+    where
+        T: Ord,
+        F: FnMut(&Range<T>) -> bool,
+    {
+        self.map.retain(|r, _| f(r))
+    }
+
+    /// Moves all elements from `other` into `Self`, leaving `other` empty.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rangemap::{Range, RangeSet};
+    ///
+    /// let mut a = RangeSet::new();
+    /// a.insert(0..1);
+    /// a.insert(1..2);
+    /// a.insert(2..3);
+    ///
+    /// let mut b = RangeSet::new();
+    /// b.insert(2..3);
+    /// b.insert(3..4);
+    /// b.insert(4..5);
+    ///
+    /// a.append(&mut b);
+    ///
+    /// // Ranges in a should all be coalesced to 0..5
+    /// assert!(a.into_iter().eq(vec![
+    ///     Range::from(0..5)
+    /// ]));
+    /// assert!(b.is_empty());
+    /// ```
+    pub fn append(&mut self, other: &mut Self)
+    where
+        T: Clone + Ord,
+    {
+        self.map.append(&mut other.map)
+    }
+
+    /// Split the set into two at the given bound. Returns everything including
+    /// and after that bound.
+    ///
+    /// # Examples
+    ///
+    /// # Basic Usage
+    ///
+    /// ```
+    /// use rangemap::{RangeSet, Range, Bound};
+    ///
+    /// let mut a = RangeSet::new();
+    /// a.insert(0..1);
+    /// a.insert(2..3);
+    /// a.insert(4..5);
+    /// a.insert(6..7);
+    ///
+    /// let b = a.split_off(Bound::Included(4));
+    ///
+    /// assert!(a.into_iter().eq(vec![
+    ///     Range::from(0..1),
+    ///     Range::from(2..3),
+    /// ]));
+    /// assert!(b.into_iter().eq(vec![
+    ///     Range::from(4..5),
+    ///     Range::from(6..7),
+    /// ]));
+    /// ```
+    ///
+    /// ## Mixed Bounds
+    ///
+    /// ```
+    /// use rangemap::{RangeSet, Range, Bound};
+    ///
+    /// let mut a = RangeSet::new();
+    /// a.insert(0..7);
+    ///
+    /// let c = a.split_off(Bound::Excluded(4));
+    /// let b = a.split_off(Bound::Included(2));
+    ///
+    /// assert!(a.into_iter().eq(vec![
+    ///     Range::from(0..2)
+    /// ]));
+    /// assert!(b.into_iter().eq(vec![
+    ///     Range::from(2..=4)
+    /// ]));
+    /// assert!(c.into_iter().eq(vec![
+    ///     Range::new(Bound::Excluded(4), Bound::Excluded(7))
+    /// ]));
+    /// ```
+    ///
+    pub fn split_off(&mut self, at: Bound<T>) -> Self
+    where
+        T: Clone + Ord,
+    {
+        Self {
+            map: self.map.split_off(at),
+        }
+    }
+
+    // TODO: split_off_range
+}
+
+impl<T: Clone + Ord> RangeSet<&T> {
+    pub fn cloned(&self) -> RangeSet<T> {
+        RangeSet {
+            map: RangeMap {
+                map: self.map.map.iter().map(|(k, _)| (k.cloned(), ())).collect(),
+                store: alloc::vec::Vec::with_capacity(self.map.store.len()),
+            },
         }
     }
 }
 
-pub struct IntoIter<T> {
-    inner: super::map::IntoIter<T, ()>,
+impl<T> Default for RangeSet<T>
+where
+    T: Clone + Ord,
+{
+    fn default() -> Self {
+        RangeSet::new()
+    }
 }
-impl<T> IntoIterator for RangeSet<T> {
-    type Item = Range<T>;
-    type IntoIter = IntoIter<T>;
-    fn into_iter(self) -> Self::IntoIter {
-        IntoIter {
-            inner: self.rm.into_iter(),
+
+impl<K, V> From<RangeMap<K, V>> for RangeSet<K>
+where
+    K: Ord,
+{
+    fn from(map: RangeMap<K, V>) -> Self {
+        let RangeMap { map, store } = map;
+        RangeSet {
+            map: RangeMap {
+                map: map.into_iter().map(|(k, _)| (k, ())).collect(),
+                store,
+            },
         }
-    }
-}
-impl<T> Iterator for IntoIter<T> {
-    type Item = Range<T>;
-    fn next(&mut self) -> Option<Range<T>> {
-        self.inner.next().map(|(range, _)| range)
-    }
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.inner.size_hint()
     }
 }
 
@@ -126,104 +421,8 @@ where
     }
 }
 
-pub struct Gaps<'a, T> {
-    inner: crate::map::Gaps<'a, T, ()>,
-}
-
-// `Gaps` is always fused. (See definition of `next` below.)
-impl<'a, T> core::iter::FusedIterator for Gaps<'a, T> where T: Ord + Clone {}
-
-impl<'a, T> Iterator for Gaps<'a, T>
-where
-    T: Ord + Clone,
-{
-    type Item = Range<T>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use alloc::{format, vec, vec::Vec};
-
-    trait RangeSetExt<T> {
-        fn to_vec(&self) -> Vec<Range<T>>;
-    }
-
-    impl<T> RangeSetExt<T> for RangeSet<T>
-    where
-        T: Ord + Clone,
-    {
-        fn to_vec(&self) -> Vec<Range<T>> {
-            self.iter().cloned().collect()
-        }
-    }
-
-    #[test]
-    fn empty_set_is_empty() {
-        let range_set: RangeSet<u32> = RangeSet::new();
-        assert_eq!(range_set.to_vec(), vec![]);
-    }
-
-    #[test]
-    fn insert_into_empty_map() {
-        let mut range_set: RangeSet<u32> = RangeSet::new();
-        range_set.insert(0..50);
-        assert_eq!(range_set.to_vec(), vec![0..50]);
-    }
-
-    #[test]
-    fn remove_partially_overlapping() {
-        let mut range_set: RangeSet<u32> = RangeSet::new();
-        range_set.insert(0..50);
-        range_set.remove(25..75);
-        assert_eq!(range_set.to_vec(), vec![0..25]);
-    }
-
-    #[test]
-    fn gaps_between_items_floating_inside_outer_range() {
-        let mut range_set: RangeSet<u32> = RangeSet::new();
-        // 0 1 2 3 4 5 6 7 8 9
-        // ◌ ◌ ◌ ◌ ◌ ●-◌ ◌ ◌ ◌
-        range_set.insert(5..6);
-        // 0 1 2 3 4 5 6 7 8 9
-        // ◌ ◌ ◌ ●-◌ ◌ ◌ ◌ ◌ ◌
-        range_set.insert(3..4);
-        // 0 1 2 3 4 5 6 7 8 9
-        // ◌ ◆-------------◇ ◌
-        let outer_range = 1..8;
-        let mut gaps = range_set.gaps(&outer_range);
-        // Should yield gaps at start, between items,
-        // and at end.
-        assert_eq!(gaps.next(), Some(1..3));
-        assert_eq!(gaps.next(), Some(4..5));
-        assert_eq!(gaps.next(), Some(6..8));
-        assert_eq!(gaps.next(), None);
-        // Gaps iterator should be fused.
-        assert_eq!(gaps.next(), None);
-        assert_eq!(gaps.next(), None);
-    }
-    ///
-    /// impl Debug
-    ///
-
-    #[test]
-    fn set_debug_repr_looks_right() {
-        let mut set: RangeSet<u32> = RangeSet::new();
-
-        // Empty
-        assert_eq!(format!("{:?}", set), "{}");
-
-        // One entry
-        set.insert(2..5);
-        assert_eq!(format!("{:?}", set), "{2..5}");
-
-        // Many entries
-        set.insert(7..8);
-        set.insert(10..11);
-        assert_eq!(format!("{:?}", set), "{2..5, 7..8, 10..11}");
+impl<T: PartialEq> PartialEq for RangeSet<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.map == other.map
     }
 }

@@ -55,20 +55,6 @@ impl<T: Ord + Clone> core::ops::BitOr<&RangeSet<T>> for &RangeSet<T> {
 impl<T: Ord + Clone> core::ops::Add<&RangeSet<T>> for &RangeSet<T> {
     type Output = RangeSet<T>;
 
-    /// Returns the union of `self` and `rhs` as a new `BTreeSet<T>`.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use std::collections::BTreeSet;
-    ///
-    /// let a: BTreeSet<_> = vec![1, 2, 3].into_iter().collect();
-    /// let b: BTreeSet<_> = vec![3, 4, 5].into_iter().collect();
-    ///
-    /// let result = &a + &b;
-    /// let result_vec: Vec<_> = result.into_iter().collect();
-    /// assert_eq!(result_vec, [1, 2, 3, 4, 5]);
-    /// ```
     fn add(self, rhs: &RangeSet<T>) -> RangeSet<T> {
         self.union(rhs).cloned()
     }

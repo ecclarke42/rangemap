@@ -56,16 +56,12 @@ impl<K, V> RangeMap<K, V> {
     /// Basic usage:
     ///
     /// ```
-    /// use crate::{Range, RangeMap};
+    /// use rangemap::{Range, RangeMap};
     ///
     /// let mut map = RangeMap::new();
     /// map.insert(0..1, "a");
     /// map.insert(1..2, "b");
     /// map.insert(2..3, "c");
-    ///
-    /// for (range, value) in map.iter() {
-    ///     println!("{}: {}", range, value);
-    /// }
     ///
     /// let (first_range, first_value) = map.iter().next().unwrap();
     /// assert_eq!((*first_range, *first_value), (Range::from(0..1), "a"));

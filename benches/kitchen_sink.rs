@@ -29,6 +29,22 @@ fn old_kitchen_sink(kvs: &[(Range<i32>, bool)]) {
     let mut remove = false;
     for (range, value) in kvs {
         if remove {
+            range_map.clear_range(range.clone());
+        } else {
+            range_map.set(range.clone(), *value);
+        }
+        remove = !remove;
+    }
+}
+
+fn old_kitchen_sink(kvs: &[(Range<i32>, bool)]) {
+    use base::RangeMap;
+
+    let mut range_map: RangeMap<i32, bool> = RangeMap::new();
+    // Remove every second range.
+    let mut remove = false;
+    for (range, value) in kvs {
+        if remove {
             range_map.remove(range.clone());
         } else {
             range_map.insert(range.clone(), *value);

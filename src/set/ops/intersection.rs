@@ -1,8 +1,8 @@
 use core::cmp::Ordering::*;
 
-use crate::{map::Key, set::iterators::Iter, Range, RangeMap, RangeSet};
+use crate::{map::Key, set::iterators::Iter, Segment, SegmentMap, SegmentSet};
 
-impl<T> RangeSet<T> {
+impl<T> SegmentSet<T> {
     // TODO: into_intersection_iter
 
     pub fn iter_intersection<'a>(&'a self, other: &'a Self) -> Intersection<'a, T> {
@@ -16,14 +16,14 @@ impl<T> RangeSet<T> {
 
     // TODO: into_intersection
 
-    pub fn intersection<'a>(&'a self, other: &'a Self) -> RangeSet<&'a T>
+    pub fn intersection<'a>(&'a self, other: &'a Self) -> SegmentSet<&'a T>
     where
         T: Ord,
     {
         // Don't need to insert, since we know ranges produced by the iterator
         // aren't overlapping
-        RangeSet {
-            map: RangeMap {
+        SegmentSet {
+            map: SegmentMap {
                 map: self
                     .iter_intersection(other)
                     .map(|r| (Key(r), ()))
@@ -35,8 +35,8 @@ impl<T> RangeSet<T> {
 }
 
 /// Set Intersection A & B
-impl<'a, T: Ord + Clone> core::ops::BitAnd<&'a RangeSet<T>> for &'a RangeSet<T> {
-    type Output = RangeSet<&'a T>;
+impl<'a, T: Ord + Clone> core::ops::BitAnd<&'a SegmentSet<T>> for &'a SegmentSet<T> {
+    type Output = SegmentSet<&'a T>;
 
     // TODO: docs
 
@@ -54,25 +54,25 @@ impl<'a, T: Ord + Clone> core::ops::BitAnd<&'a RangeSet<T>> for &'a RangeSet<T> 
     /// let result_vec: Vec<_> = result.into_iter().collect();
     /// assert_eq!(result_vec, [2, 3]);
     /// ```
-    fn bitand(self, rhs: &'a RangeSet<T>) -> RangeSet<&'a T> {
+    fn bitand(self, rhs: &'a SegmentSet<T>) -> SegmentSet<&'a T> {
         self.intersection(rhs)
     }
 }
 
 // TODO: into_intersection
-impl<'a, T: Ord + Clone> core::ops::BitAnd<RangeSet<T>> for RangeSet<T> {
-    type Output = RangeSet<T>;
-    fn bitand(self, rhs: RangeSet<T>) -> RangeSet<T> {
+impl<'a, T: Ord + Clone> core::ops::BitAnd<SegmentSet<T>> for SegmentSet<T> {
+    type Output = SegmentSet<T>;
+    fn bitand(self, rhs: SegmentSet<T>) -> SegmentSet<T> {
         self.intersection(&rhs).cloned()
     }
 }
 
 /// Set in-place intersection
-// impl<T: Ord + Clone> core::ops::BitAndAssign<&RangeSet<T>> for RangeSet<T> {
-//     fn bitxor_assign(&mut self, rhs: &RangeSet<T>) {}
+// impl<T: Ord + Clone> core::ops::BitAndAssign<&SegmentSet<T>> for SegmentSet<T> {
+//     fn bitxor_assign(&mut self, rhs: &SegmentSet<T>) {}
 // }
-// impl<T: Ord + Clone> core::ops::BitAndAssign<RangeSet<T>> for RangeSet<T> {
-//     fn sub_assign(&mut self, rhs: RangeSet<T>) {
+// impl<T: Ord + Clone> core::ops::BitAndAssign<SegmentSet<T>> for SegmentSet<T> {
+//     fn sub_assign(&mut self, rhs: SegmentSet<T>) {
 //         for range in rhs.iter() {
 //             self.remove(range);
 //         }
@@ -81,14 +81,14 @@ impl<'a, T: Ord + Clone> core::ops::BitAnd<RangeSet<T>> for RangeSet<T> {
 
 pub struct Intersection<'a, T> {
     iter_a: Iter<'a, T>,
-    prev_a: Option<Range<&'a T>>,
+    prev_a: Option<Segment<&'a T>>,
 
     iter_b: Iter<'a, T>,
-    prev_b: Option<Range<&'a T>>,
+    prev_b: Option<Segment<&'a T>>,
 }
 
 impl<'a, T: Ord> Iterator for Intersection<'a, T> {
-    type Item = Range<&'a T>;
+    type Item = Segment<&'a T>;
     fn next(&mut self) -> Option<Self::Item> {
         // Get the next values. If either ran out, we're done
         let mut next_a = self

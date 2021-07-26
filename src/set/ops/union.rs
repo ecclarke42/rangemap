@@ -1,6 +1,6 @@
-use crate::{map::Key, set::iterators::Iter, Range, RangeMap, RangeSet};
+use crate::{map::Key, set::iterators::Iter, Segment, SegmentMap, SegmentSet};
 
-impl<T> RangeSet<T> {
+impl<T> SegmentSet<T> {
     // TODO: into_union_iter
 
     pub fn union_iter<'a>(&'a self, other: &'a Self) -> Union<'a, T> {
@@ -14,14 +14,14 @@ impl<T> RangeSet<T> {
 
     // TODO: into_union
 
-    pub fn union<'a>(&'a self, other: &'a Self) -> RangeSet<&'a T>
+    pub fn union<'a>(&'a self, other: &'a Self) -> SegmentSet<&'a T>
     where
         T: Ord,
     {
         // Don't need to insert, since we know ranges produced by the iterator
         // aren't overlapping
-        RangeSet {
-            map: RangeMap {
+        SegmentSet {
+            map: SegmentMap {
                 map: self.union_iter(other).map(|r| (Key(r), ())).collect(),
                 store: alloc::vec::Vec::new(),
             },
@@ -29,8 +29,8 @@ impl<T> RangeSet<T> {
     }
 }
 /// Set Union
-impl<T: Ord + Clone> core::ops::BitOr<&RangeSet<T>> for &RangeSet<T> {
-    type Output = RangeSet<T>;
+impl<T: Ord + Clone> core::ops::BitOr<&SegmentSet<T>> for &SegmentSet<T> {
+    type Output = SegmentSet<T>;
 
     /// Returns the union of `self` and `rhs` as a new `BTreeSet<T>`.
     ///
@@ -46,16 +46,16 @@ impl<T: Ord + Clone> core::ops::BitOr<&RangeSet<T>> for &RangeSet<T> {
     /// let result_vec: Vec<_> = result.into_iter().collect();
     /// assert_eq!(result_vec, [1, 2, 3, 4, 5]);
     /// ```
-    fn bitor(self, rhs: &RangeSet<T>) -> RangeSet<T> {
+    fn bitor(self, rhs: &SegmentSet<T>) -> SegmentSet<T> {
         self.union(rhs).cloned()
     }
 }
 
 /// Set Union
-impl<T: Ord + Clone> core::ops::Add<&RangeSet<T>> for &RangeSet<T> {
-    type Output = RangeSet<T>;
+impl<T: Ord + Clone> core::ops::Add<&SegmentSet<T>> for &SegmentSet<T> {
+    type Output = SegmentSet<T>;
 
-    fn add(self, rhs: &RangeSet<T>) -> RangeSet<T> {
+    fn add(self, rhs: &SegmentSet<T>) -> SegmentSet<T> {
         self.union(rhs).cloned()
     }
 }
@@ -64,14 +64,14 @@ impl<T: Ord + Clone> core::ops::Add<&RangeSet<T>> for &RangeSet<T> {
 
 pub struct Union<'a, T> {
     iter_a: Iter<'a, T>,
-    prev_a: Option<Range<&'a T>>,
+    prev_a: Option<Segment<&'a T>>,
 
     iter_b: Iter<'a, T>,
-    prev_b: Option<Range<&'a T>>,
+    prev_b: Option<Segment<&'a T>>,
 }
 
 impl<'a, T: Ord> Iterator for Union<'a, T> {
-    type Item = Range<&'a T>;
+    type Item = Segment<&'a T>;
     fn next(&mut self) -> Option<Self::Item> {
         let next_a = self
             .prev_a
@@ -106,7 +106,7 @@ impl<'a, T: Ord> Iterator for Union<'a, T> {
         }
 
         // Otherwise, `a` must overlap `b`. Store the outer bounds
-        let mut outer = Range {
+        let mut outer = Segment {
             start: core::cmp::min(next_a.start, next_b.start),
             end: core::cmp::max(next_a.end, next_b.end),
         };

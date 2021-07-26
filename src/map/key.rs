@@ -1,9 +1,9 @@
-use crate::{bounds::StartBound, range::Range};
+use crate::segment::{Segment, Start};
 use core::{cmp::Ordering, fmt::Debug, ops::Bound};
 
 /// Wrapper type for items the map (range should only ever be increasing)
 #[derive(Clone)]
-pub(crate) struct Key<T>(pub(crate) Range<T>);
+pub(crate) struct Key<T>(pub(crate) Segment<T>);
 
 impl<T: Clone> Key<&T> {
     pub(crate) fn cloned(&self) -> Key<T> {
@@ -18,18 +18,18 @@ impl<T: Debug> Debug for Key<T> {
     }
 }
 
-impl<T> core::borrow::Borrow<StartBound<T>> for Key<T> {
-    fn borrow(&self) -> &StartBound<T> {
+impl<T> core::borrow::Borrow<Start<T>> for Key<T> {
+    fn borrow(&self) -> &Start<T> {
         &self.0.start
     }
 }
-// impl<T> core::borrow::Borrow<StartBound<&T>> for Key<T> {
-//     fn borrow(&self) -> &StartBound<&T> {
+// impl<T> core::borrow::Borrow<Start<&T>> for Key<T> {
+//     fn borrow(&self) -> &Start<&T> {
 //         &self.0.start.as_ref()
 //     }
 // }
-// impl<'a, T> core::borrow::Borrow<StartBound<&'a T>> for Key<T> {
-//     fn borrow(&self) -> &StartBound<&'a T> {
+// impl<'a, T> core::borrow::Borrow<Start<&'a T>> for Key<T> {
+//     fn borrow(&self) -> &Start<&'a T> {
 //         match &self.0.start.0 {
 //             Bound::Included(x) => Bound::Included(x),
 //             Bound::Excluded(x) => Bound::Excluded(x),

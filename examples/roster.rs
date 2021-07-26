@@ -1,10 +1,10 @@
 use chrono::offset::TimeZone;
 use chrono::{Duration, Utc};
-use rangemap::RangeMap;
+use segmap::SegmentMap;
 
 fn main() {
     let people = ["Alice", "Bob", "Carol"];
-    let mut roster = RangeMap::new();
+    let mut roster = SegmentMap::new();
 
     // Set up initial roster.
     let start_of_roster = Utc.ymd(2019, 1, 7);

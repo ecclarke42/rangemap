@@ -1,13 +1,13 @@
-//! Common Set operations for RangeSet
+//! Common Set operations for SegmentSet
 
-use crate::{map::Key, RangeBounds, RangeMap, RangeSet};
+use crate::{map::Key, RangeBounds, SegmentMap, SegmentSet};
 
 pub mod difference;
 pub mod intersection;
 pub mod symmetric_difference;
 pub mod union;
 
-impl<T: Ord> RangeSet<T> {
+impl<T: Ord> SegmentSet<T> {
     /// Check whether `self` and `other` are disjoint sets
     ///
     /// That is, the intersection between `self` and `other` is empty
@@ -29,12 +29,12 @@ impl<T: Ord> RangeSet<T> {
 
     // TODO: No Clone
     // TODO: subset(&self, range: R) -> Self; slightly faster than ranges(..).filter().collect() because it doesn't need to check insertions
-    pub fn subset<R: RangeBounds<T>>(&self, range: R) -> RangeSet<T>
+    pub fn subset<R: RangeBounds<T>>(&self, range: R) -> SegmentSet<T>
     where
         T: Clone + Ord,
     {
-        RangeSet {
-            map: RangeMap {
+        SegmentSet {
+            map: SegmentMap {
                 map: self
                     .map
                     .iter_subset(range)
@@ -46,7 +46,7 @@ impl<T: Ord> RangeSet<T> {
     }
 
     // as_complement / into_complement?
-    pub fn complement(&self) -> RangeSet<&T>
+    pub fn complement(&self) -> SegmentSet<&T>
     where
         T: Ord,
     {
@@ -55,8 +55,8 @@ impl<T: Ord> RangeSet<T> {
 }
 
 /// Set Complement
-impl<'a, T: Ord + Clone> core::ops::Not for &'a RangeSet<T> {
-    type Output = RangeSet<&'a T>;
+impl<'a, T: Ord + Clone> core::ops::Not for &'a SegmentSet<T> {
+    type Output = SegmentSet<&'a T>;
 
     // TODO: docs
     fn not(self) -> Self::Output {
@@ -64,8 +64,8 @@ impl<'a, T: Ord + Clone> core::ops::Not for &'a RangeSet<T> {
     }
 }
 
-impl<T: Ord + Clone> core::ops::Not for RangeSet<T> {
-    type Output = RangeSet<T>;
+impl<T: Ord + Clone> core::ops::Not for SegmentSet<T> {
+    type Output = SegmentSet<T>;
 
     fn not(self) -> Self::Output {
         self.complement().cloned()

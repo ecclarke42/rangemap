@@ -1,19 +1,19 @@
-/*! # [`RangeMap`]
+/*! # [`segmap`]
 
-[`RangeMap`] is a map data structures whose keys are stored as ranges.
-Contiguous and overlapping ranges that map to the same value are coalesced into
-a single range.
+`segmap` exposes [`SegmentMap`], a map data structure whose keys are stored as
+ranges. Contiguous and overlapping ranges that map to the same value are
+coalesced into a single range.
 
-A correspoinding [`RangeSet`] structure is also provided.
+A correspoinding [`SegmentSet`] structure is also provided.
 
-## The [`Range<T>`] Type
+## The [`Segment<T>`] Type
 
-`RangeMap` supports all types of input range types in the same map and coerces
-them all to a common range type for internal representation. A [`Range<T>`] is
+[`SegmentMap`] supports all types of input range types in the same map and coerces
+them all to a common range type for internal representation. A [`Segment<T>`] is
 always represented as increasing, so "backwards" ranges will be flipped for
 insertion.
 
-Most methods on [`RangeMap`] and [`RangeSet`] accept a generic argument for the
+Most methods on [`SegmentMap`] and [`SegmentSet`] accept a generic argument for the
 range, which only needs to implement [`RangeBounds`].
 
 ## Example: use with Chrono
@@ -21,10 +21,10 @@ range, which only needs to implement [`RangeBounds`].
 ```rust
 use chrono::offset::TimeZone;
 use chrono::{Duration, Utc};
-use rangemap::RangeMap;
+use segmap::SegmentMap;
 
 let people = ["Alice", "Bob", "Carol"];
-let mut roster = RangeMap::new();
+let mut roster = SegmentMap::new();
 
 // Set up initial roster.
 let start_of_roster = Utc.ymd(2019, 1, 7);
@@ -78,27 +78,22 @@ introduced in the future, and will be gated behind a default-on
 See [The Rust Programming Language](https://doc.rust-lang.org/1.7.0/book/no-stdlib.html)
 book for general information about operating without the standard library.
 
-[`RangeMap`]: crate::RangeMap
-[`RangeSet`]: crate::RangeSet
-[`Range<T>`]: crate::range::Range
-[`Range`]: core::ops::Range
+[`Segment<T>`]: crate::Segment
 [`RangeBounds`]: core::ops::RangeBounds
-[`RangeInclusive`]: core::ops::RangeInclusive
 
 */
 
 #![no_std]
 extern crate alloc;
 
-mod bounds;
 pub mod map;
-pub mod range;
+pub mod segment;
 pub mod set;
 
 #[cfg(test)]
 mod stupid_range_map;
 
 pub use core::ops::{Bound, RangeBounds};
-pub use map::RangeMap;
-pub use range::Range;
-pub use set::RangeSet;
+pub use map::SegmentMap;
+pub use segment::Segment;
+pub use set::SegmentSet;

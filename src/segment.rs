@@ -1,19 +1,22 @@
-use crate::bounds::{EndBound, StartBound};
 use core::{
     cmp::Ordering,
     fmt::Debug,
     ops::Bound::{self, *},
 };
 
+mod bounds;
+
+pub(crate) use bounds::{End, Start};
+
 /// Monotonically increasing segment, for use as a concrete range type in
-/// [`RangeMap`].
+/// [`SegmentMap`].
 #[derive(Clone, Copy, Hash, Eq)]
-pub struct Range<T> {
-    pub(crate) start: StartBound<T>,
-    pub(crate) end: EndBound<T>,
+pub struct Segment<T> {
+    pub(crate) start: Start<T>,
+    pub(crate) end: End<T>,
 }
 
-impl<T> core::ops::RangeBounds<T> for Range<T> {
+impl<T> core::ops::RangeBounds<T> for Segment<T> {
     fn start_bound(&self) -> Bound<&T> {
         self.start.as_bound_inner_ref()
     }
@@ -22,7 +25,7 @@ impl<T> core::ops::RangeBounds<T> for Range<T> {
     }
 }
 
-impl<T> core::ops::RangeBounds<T> for &Range<T> {
+impl<T> core::ops::RangeBounds<T> for &Segment<T> {
     fn start_bound(&self) -> Bound<&T> {
         self.start.as_bound_inner_ref()
     }
@@ -31,7 +34,7 @@ impl<T> core::ops::RangeBounds<T> for &Range<T> {
     }
 }
 
-impl<T: Debug> Debug for Range<T> {
+impl<T: Debug> Debug for Segment<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match &self.start.0 {
             Unbounded => write!(f, "(-∞, ")?,
@@ -46,7 +49,7 @@ impl<T: Debug> Debug for Range<T> {
     }
 }
 
-impl<T> Range<T> {
+impl<T> Segment<T> {
     /// Construct a new segment from range bounds
     ///
     /// If the range given is backwards (decreasing), it will be reversed
@@ -64,19 +67,19 @@ impl<T> Range<T> {
     /// range is impossible to evaluate
     ///
     /// ```
-    /// use rangemap::{Range, Bound};
-    /// use core::ops::RangeBounds;
+    /// # use segmap::*;
+    /// # use core::ops::RangeBounds;
     ///
-    /// let r = Range::new(Bound::Included(0), Bound::Excluded(5));
+    /// let r = Segment::new(Bound::Included(0), Bound::Excluded(5));
     /// assert_eq!(r.start_bound(), Bound::Included(&0));
     /// assert_eq!(r.end_bound(), Bound::Excluded(&5));
     /// ```
     ///
     /// # See Also
     ///
-    /// `Range` also implements `From` for all of the `core::ops` range types,
+    /// `Segment` also implements `From` for all of the `core::ops` range types,
     /// so you may find it more convenient to construct a range like
-    /// `Range::from(a..b)`
+    /// `Segment::from(a..b)`
     ///
     pub fn new(start: Bound<T>, end: Bound<T>) -> Self
     where
@@ -89,24 +92,24 @@ impl<T> Range<T> {
             | (Excluded(s), Excluded(e)) => match s.cmp(e) {
                 // If equal, coerce to included
                 Ordering::Equal => Self {
-                    start: StartBound(Included(bound_value(start).unwrap())),
-                    end: EndBound(Included(bound_value(end).unwrap())),
+                    start: Start(Included(bound_value(start).unwrap())),
+                    end: End(Included(bound_value(end).unwrap())),
                 },
                 Ordering::Less => Self {
-                    start: StartBound(start),
-                    end: EndBound(end),
+                    start: Start(start),
+                    end: End(end),
                 },
                 // If backwards, flip bounds
                 Ordering::Greater => Self {
-                    start: StartBound(end),
-                    end: EndBound(start),
+                    start: Start(end),
+                    end: End(start),
                 },
             },
 
             // Otherwise, only one side has a value
             _ => Self {
-                start: StartBound(start),
-                end: EndBound(end),
+                start: Start(start),
+                end: End(end),
             },
         }
     }
@@ -118,16 +121,15 @@ impl<T> Range<T> {
     /// # Examples
     ///
     /// ```
-    /// use rangemap::{Range, Bound, RangeBounds};
-    ///
-    /// let r = Range::<u32>::full();
+    /// # use segmap::*;
+    /// let r = Segment::<u32>::full();
     /// assert_eq!(r.start_bound(), Bound::Unbounded);
     /// assert_eq!(r.end_bound(), Bound::Unbounded);
     /// ```
     pub fn full() -> Self {
         Self {
-            start: StartBound(Unbounded),
-            end: EndBound(Unbounded),
+            start: Start(Unbounded),
+            end: End(Unbounded),
         }
     }
 
@@ -136,9 +138,8 @@ impl<T> Range<T> {
     /// # Examples
     ///
     /// ```
-    /// use rangemap::{Range, RangeBounds, Bound};
-    ///
-    /// let r = Range::point(5);
+    /// # use segmap::*;
+    /// let r = Segment::point(5);
     /// assert_eq!(r.start_bound(), Bound::Included(&5));
     /// assert_eq!(r.end_bound(), Bound::Included(&5));
     /// ```
@@ -147,8 +148,8 @@ impl<T> Range<T> {
         T: Clone,
     {
         Self {
-            start: StartBound(Included(value.clone())),
-            end: EndBound(Included(value)),
+            start: Start(Included(value.clone())),
+            end: End(Included(value)),
         }
     }
 
@@ -157,12 +158,11 @@ impl<T> Range<T> {
     /// # Examples
     ///
     /// ```
-    /// use rangemap::{Range, RangeBounds, Bound};
-    ///
-    /// let bounded = Range::from(5..10);
+    /// # use segmap::*;
+    /// let bounded = Segment::from(5..10);
     /// assert_eq!(bounded.start_value(), Some(&5));
     ///
-    /// let unbounded = Range::from(..10);
+    /// let unbounded = Segment::from(..10);
     /// assert_eq!(unbounded.start_value(), None);
     /// ```
     pub fn start_value(&self) -> Option<&T> {
@@ -174,27 +174,26 @@ impl<T> Range<T> {
     /// # Examples
     ///
     /// ```
-    /// use rangemap::{Range, RangeBounds, Bound};
-    ///
-    /// let bounded = Range::from(5..10);
+    /// # use segmap::*;
+    /// let bounded = Segment::from(5..10);
     /// assert_eq!(bounded.end_value(), Some(&10));
     ///
-    /// let unbounded = Range::from(5..);
+    /// let unbounded = Segment::from(5..);
     /// assert_eq!(unbounded.end_value(), None);
     /// ```
     pub fn end_value(&self) -> Option<&T> {
         self.end.value()
     }
 
-    /// Converts from `Range<T>` to `Range<&T>`.
+    /// Converts from `Segment<T>` to `Segment<&T>`.
     ///
-    /// Many iterators from this crate return a `Range<&T>` instead of a
-    /// `&Range<T>` since bounds need to be constructed or adjusted. This allows
+    /// Many iterators from this crate return a `Segment<&T>` instead of a
+    /// `&Segment<T>` since bounds need to be constructed or adjusted. This allows
     /// us to avoid `clone`ing `T`.
     ///
     #[inline]
-    pub fn as_ref(&self) -> Range<&T> {
-        Range {
+    pub fn as_ref(&self) -> Segment<&T> {
+        Segment {
             start: self.start.as_ref(),
             end: self.end.as_ref(),
         }
@@ -205,28 +204,27 @@ impl<T> Range<T> {
     /// # Examples
     ///
     /// ```
-    /// use rangemap::Range;
-    ///
-    /// // Overlapping Ranges
-    /// let a = Range::from(0..10);
-    /// let b = Range::from(5..15);
+    /// # use segmap::*;
+    /// // Overlapping Segments
+    /// let a = Segment::from(0..10);
+    /// let b = Segment::from(5..15);
     /// assert!(a.overlaps(&b));
     ///
-    /// // Touching Ranges
-    /// let a = Range::from(0..10);
-    /// let b = Range::from(10..20);
+    /// // Touching Segments
+    /// let a = Segment::from(0..10);
+    /// let b = Segment::from(10..20);
     /// assert!(!a.overlaps(&b));
     ///
-    /// // Separate Ranges
-    /// let a = Range::from(0..10);
-    /// let b = Range::from(15..20);
+    /// // Separate Segments
+    /// let a = Segment::from(0..10);
+    /// let b = Segment::from(15..20);
     /// assert!(!a.overlaps(&b));
     ///
     /// ```
     ///
     /// # See Also
     ///
-    /// - [`Range::touches`] for overlapping OR adjacent ranges
+    /// - [`Segment::touches`] for overlapping OR adjacent ranges
     ///
     pub fn overlaps(&self, other: &Self) -> bool
     where
@@ -253,28 +251,27 @@ impl<T> Range<T> {
     /// # Examples
     ///
     /// ```
-    /// use rangemap::Range;
-    ///
-    /// // Overlapping Ranges
-    /// let a = Range::from(0..10);
-    /// let b = Range::from(5..15);
+    /// # use segmap::*;
+    /// // Overlapping Segments
+    /// let a = Segment::from(0..10);
+    /// let b = Segment::from(5..15);
     /// assert!(a.touches(&b));
     ///
-    /// // Touching Ranges
-    /// let a = Range::from(0..10);
-    /// let b = Range::from(10..20);
+    /// // Touching Segments
+    /// let a = Segment::from(0..10);
+    /// let b = Segment::from(10..20);
     /// assert!(a.touches(&b));
     ///
-    /// // Separate Ranges
-    /// let a = Range::from(0..10);
-    /// let b = Range::from(15..20);
+    /// // Separate Segments
+    /// let a = Segment::from(0..10);
+    /// let b = Segment::from(15..20);
     /// assert!(!a.touches(&b));
     ///
     /// ```
     ///
     /// # See Also
     ///
-    /// - [`Range::overlaps`] for only overlapping ranges
+    /// - [`Segment::overlaps`] for only overlapping ranges
     ///
     pub fn touches(&self, other: &Self) -> bool
     where
@@ -348,9 +345,9 @@ impl<T> Range<T> {
     // }
 }
 
-impl<T: Clone> Range<&T> {
-    pub(crate) fn cloned(&self) -> Range<T> {
-        Range {
+impl<T: Clone> Segment<&T> {
+    pub(crate) fn cloned(&self) -> Segment<T> {
+        Segment {
             start: self.start.cloned(),
             end: self.end.cloned(),
         }
@@ -358,24 +355,24 @@ impl<T: Clone> Range<&T> {
 }
 
 /// Crate Methods
-impl<T> Range<T> {
+impl<T> Segment<T> {
     /// Obtain the adjacent end bound before the start of this range (if it
     /// exists)
-    pub(crate) fn bound_before(&self) -> Option<EndBound<&T>> {
+    pub(crate) fn bound_before(&self) -> Option<End<&T>> {
         self.start.before()
     }
     /// Obtain the adjacent start bound after the end of this range (if it
     /// exists)
-    pub(crate) fn bound_after(&self) -> Option<StartBound<&T>> {
+    pub(crate) fn bound_after(&self) -> Option<Start<&T>> {
         self.end.after()
     }
 }
 
-impl<'a, T> Range<&'a T> {
-    pub(crate) fn borrow_bound_before(&self) -> Option<EndBound<&'a T>> {
+impl<'a, T> Segment<&'a T> {
+    pub(crate) fn borrow_bound_before(&self) -> Option<End<&'a T>> {
         self.start.borrow_before()
     }
-    pub(crate) fn borrow_bound_after(&self) -> Option<StartBound<&'a T>> {
+    pub(crate) fn borrow_bound_after(&self) -> Option<Start<&'a T>> {
         self.end.borrow_after()
     }
 }
@@ -396,52 +393,52 @@ fn bound_value<T>(b: Bound<T>) -> Option<T> {
     }
 }
 
-impl<T: Ord> From<core::ops::Range<T>> for Range<T> {
+impl<T: Ord> From<core::ops::Range<T>> for Segment<T> {
     fn from(r: core::ops::Range<T>) -> Self {
-        Range::new(Included(r.start), Excluded(r.end))
+        Segment::new(Included(r.start), Excluded(r.end))
     }
 }
 
-impl<T: Ord> From<core::ops::RangeFrom<T>> for Range<T> {
+impl<T: Ord> From<core::ops::RangeFrom<T>> for Segment<T> {
     fn from(r: core::ops::RangeFrom<T>) -> Self {
-        Range::new(Included(r.start), Unbounded)
+        Segment::new(Included(r.start), Unbounded)
     }
 }
 
-impl<T: Ord> From<core::ops::RangeTo<T>> for Range<T> {
+impl<T: Ord> From<core::ops::RangeTo<T>> for Segment<T> {
     fn from(r: core::ops::RangeTo<T>) -> Self {
-        Range::new(Unbounded, Excluded(r.end))
+        Segment::new(Unbounded, Excluded(r.end))
     }
 }
 
-impl<T: Ord> From<core::ops::RangeFull> for Range<T> {
+impl<T: Ord> From<core::ops::RangeFull> for Segment<T> {
     fn from(_: core::ops::RangeFull) -> Self {
-        Range::new(Unbounded, Unbounded)
+        Segment::new(Unbounded, Unbounded)
     }
 }
 
-impl<T: Ord> From<core::ops::RangeInclusive<T>> for Range<T> {
+impl<T: Ord> From<core::ops::RangeInclusive<T>> for Segment<T> {
     fn from(r: core::ops::RangeInclusive<T>) -> Self {
         let (start, end) = r.into_inner();
-        Range::new(Included(start), Included(end))
+        Segment::new(Included(start), Included(end))
     }
 }
 
-impl<T: Ord> From<core::ops::RangeToInclusive<T>> for Range<T> {
+impl<T: Ord> From<core::ops::RangeToInclusive<T>> for Segment<T> {
     fn from(r: core::ops::RangeToInclusive<T>) -> Self {
-        Range::new(Unbounded, Included(r.end))
+        Segment::new(Unbounded, Included(r.end))
     }
 }
 
 // TODO: no clone, return a Range<&T>
 
-impl<T: Ord + Clone, R: core::ops::RangeBounds<T>> From<&R> for Range<T> {
+impl<T: Ord + Clone, R: core::ops::RangeBounds<T>> From<&R> for Segment<T> {
     fn from(r: &R) -> Self {
-        Range::new(bound_cloned(r.start_bound()), bound_cloned(r.end_bound()))
+        Segment::new(bound_cloned(r.start_bound()), bound_cloned(r.end_bound()))
     }
 }
 
-impl<T: PartialEq, R: core::ops::RangeBounds<T>> PartialEq<R> for Range<T> {
+impl<T: PartialEq, R: core::ops::RangeBounds<T>> PartialEq<R> for Segment<T> {
     fn eq(&self, other: &R) -> bool {
         (match (&self.start.0, other.start_bound()) {
             (Unbounded, Unbounded) => true,

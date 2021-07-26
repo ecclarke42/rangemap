@@ -1,45 +1,31 @@
-
 use super::*;
 use alloc::{format, vec, vec::Vec};
 
-trait RangeSetExt<T> {
-    fn to_vec(&self) -> Vec<Range<T>>;
-}
-
-impl<T> RangeSetExt<T> for RangeSet<T>
-where
-    T: Ord + Clone,
-{
-    fn to_vec(&self) -> Vec<Range<T>> {
-        self.iter().cloned().collect()
-    }
-}
-
 #[test]
 fn empty_set_is_empty() {
-    let range_set: RangeSet<u32> = RangeSet::new();
-    assert_eq!(range_set.to_vec(), Vec::<Range<u32>>::new());
+    let range_set: SegmentSet<u32> = SegmentSet::new();
+    assert_eq!(range_set.into_vec(), Vec::<Segment<u32>>::new());
 }
 
 #[test]
 fn insert_into_empty_map() {
-    let mut range_set: RangeSet<u32> = RangeSet::new();
+    let mut range_set: SegmentSet<u32> = SegmentSet::new();
     range_set.insert(0..50);
-    assert_eq!(range_set.to_vec(), vec![0..50]);
+    assert_eq!(range_set.into_vec(), vec![0..50]);
 }
 
 #[test]
 fn remove_partially_overlapping() {
-    let mut range_set: RangeSet<u32> = RangeSet::new();
+    let mut range_set: SegmentSet<u32> = SegmentSet::new();
     range_set.insert(0..50);
     range_set.remove(25..75);
-    assert_eq!(range_set.to_vec(), vec![0..25]);
+    assert_eq!(range_set.into_vec(), vec![0..25]);
 }
 
 // TODO: gaps_in
 // #[test]
 // fn gaps_between_items_floating_inside_outer_range() {
-//     let mut range_set: RangeSet<u32> = RangeSet::new();
+//     let mut range_set: SegmentSet<u32> = SegmentSet::new();
 //     // 0 1 2 3 4 5 6 7 8 9
 //     // ◌ ◌ ◌ ◌ ◌ ●-◌ ◌ ◌ ◌
 //     range_set.insert(5..6);
@@ -66,7 +52,7 @@ fn remove_partially_overlapping() {
 
 #[test]
 fn set_debug_repr_looks_right() {
-    let mut set: RangeSet<u32> = RangeSet::new();
+    let mut set: SegmentSet<u32> = SegmentSet::new();
 
     // Empty
     assert_eq!(format!("{:?}", set), "{}");

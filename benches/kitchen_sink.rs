@@ -6,9 +6,9 @@ use rand::prelude::*;
 use std::ops::Range;
 
 fn kitchen_sink(kvs: &[(Range<i32>, bool)]) {
-    use rangemap::RangeMap;
+    use segmap::SegmentMap;
 
-    let mut range_map: RangeMap<i32, bool> = RangeMap::new();
+    let mut range_map: SegmentMap<i32, bool> = SegmentMap::new();
     // Remove every second range.
     let mut remove = false;
     for (range, value) in kvs {
@@ -22,7 +22,7 @@ fn kitchen_sink(kvs: &[(Range<i32>, bool)]) {
 }
 
 fn old_kitchen_sink(kvs: &[(Range<i32>, bool)]) {
-    use base::RangeMap;
+    use rangemap::RangeMap;
 
     let mut range_map: RangeMap<i32, bool> = RangeMap::new();
     // Remove every second range.

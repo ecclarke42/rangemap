@@ -1,35 +1,21 @@
 use super::*;
-use alloc::{collections::BTreeMap, format, vec, vec::Vec};
-
-trait RangeMapExt<K, V> {
-    fn to_vec(&self) -> Vec<(Range<K>, V)>;
-}
-
-impl<K, V> RangeMapExt<K, V> for RangeMap<K, V>
-where
-    K: Ord + Clone,
-    V: Eq + Clone,
-{
-    fn to_vec(&self) -> Vec<(Range<K>, V)> {
-        self.iter().map(|(kr, v)| (kr.clone(), v.clone())).collect()
-    }
-}
+use alloc::{collections::BTreeMap, format, vec};
 
 // A simple but infeasibly slow and memory-hungry
-// version of `RangeMap` for testing.
+// version of `SegmentMap` for testing.
 #[derive(Eq, PartialEq, Debug)]
-pub struct StupidU32RangeMap<V> {
+pub struct StupidU32Map<V> {
     // Inner B-Tree map. Stores values and their keys
     // directly rather than as ranges.
     btm: BTreeMap<u32, V>,
 }
 
-impl<V> StupidU32RangeMap<V>
+impl<V> StupidU32Map<V>
 where
     V: Eq + Clone,
 {
-    pub fn new() -> StupidU32RangeMap<V> {
-        StupidU32RangeMap {
+    pub fn new() -> StupidU32Map<V> {
+        StupidU32Map {
             btm: BTreeMap::new(),
         }
     }
@@ -51,11 +37,11 @@ where
     }
 }
 
-impl<V> From<RangeMap<u32, V>> for StupidU32RangeMap<V>
+impl<V> From<SegmentMap<u32, V>> for StupidU32Map<V>
 where
     V: Eq + Clone,
 {
-    fn from(range_map: RangeMap<u32, V>) -> Self {
+    fn from(range_map: SegmentMap<u32, V>) -> Self {
         let mut stupid = Self::new();
         for (range, value) in range_map.iter() {
             stupid.insert(range, value.clone());
@@ -70,20 +56,20 @@ where
 
 #[test]
 fn empty_map_is_empty() {
-    let range_map: RangeMap<u32, bool> = RangeMap::new();
-    assert_eq!(range_map.to_vec(), vec![]);
+    let range_map: SegmentMap<u32, bool> = SegmentMap::new();
+    assert_eq!(range_map.into_vec(), vec![]);
 }
 
 #[test]
 fn insert_into_empty_map() {
-    let mut range_map: RangeMap<u32, bool> = RangeMap::new();
+    let mut range_map: SegmentMap<u32, bool> = SegmentMap::new();
     range_map.insert(0..50, false);
-    assert_eq!(range_map.to_vec(), vec![(Range::from(0..50), false)]);
+    assert_eq!(range_map.into_vec(), vec![(Segment::from(0..50), false)]);
 }
 
 #[test]
 fn new_same_value_immediately_following_stored() {
-    let mut range_map: RangeMap<u32, bool> = RangeMap::new();
+    let mut range_map: SegmentMap<u32, bool> = SegmentMap::new();
     // 0 1 2 3 4 5 6 7 8 9
     // ◌ ●---◌ ◌ ◌ ◌ ◌ ◌ ◌
     range_map.insert(1..3, false);
@@ -92,12 +78,12 @@ fn new_same_value_immediately_following_stored() {
     range_map.insert(3..5, false);
     // 0 1 2 3 4 5 6 7 8 9
     // ◌ ●-------◌ ◌ ◌ ◌ ◌
-    assert_eq!(range_map.to_vec(), vec![(Range::from(1..5), false)]);
+    assert_eq!(range_map.into_vec(), vec![(Segment::from(1..5), false)]);
 }
 
 #[test]
 fn new_different_value_immediately_following_stored() {
-    let mut range_map: RangeMap<u32, bool> = RangeMap::new();
+    let mut range_map: SegmentMap<u32, bool> = SegmentMap::new();
     // 0 1 2 3 4 5 6 7 8 9
     // ◌ ●---◌ ◌ ◌ ◌ ◌ ◌ ◌
     range_map.insert(1..3, false);
@@ -108,14 +94,14 @@ fn new_different_value_immediately_following_stored() {
     // ◌ ●---◌ ◌ ◌ ◌ ◌ ◌ ◌
     // ◌ ◌ ◌ ◆---◇ ◌ ◌ ◌ ◌
     assert_eq!(
-        range_map.to_vec(),
-        vec![(Range::from(1..3), false), (Range::from(3..5), true)]
+        range_map.into_vec(),
+        vec![(Segment::from(1..3), false), (Segment::from(3..5), true)]
     );
 }
 
 #[test]
 fn new_same_value_overlapping_end_of_stored() {
-    let mut range_map: RangeMap<u32, bool> = RangeMap::new();
+    let mut range_map: SegmentMap<u32, bool> = SegmentMap::new();
     // 0 1 2 3 4 5 6 7 8 9
     // ◌ ●-----◌ ◌ ◌ ◌ ◌ ◌
     range_map.insert(1..4, false);
@@ -124,12 +110,12 @@ fn new_same_value_overlapping_end_of_stored() {
     range_map.insert(3..5, false);
     // 0 1 2 3 4 5 6 7 8 9
     // ◌ ●-------◌ ◌ ◌ ◌ ◌
-    assert_eq!(range_map.to_vec(), vec![(Range::from(1..5), false)]);
+    assert_eq!(range_map.into_vec(), vec![(Segment::from(1..5), false)]);
 }
 
 #[test]
 fn new_different_value_overlapping_end_of_stored() {
-    let mut range_map: RangeMap<u32, bool> = RangeMap::new();
+    let mut range_map: SegmentMap<u32, bool> = SegmentMap::new();
     // 0 1 2 3 4 5 6 7 8 9
     // ◌ ●-----◌ ◌ ◌ ◌ ◌ ◌
     range_map.insert(1..4, false);
@@ -140,14 +126,14 @@ fn new_different_value_overlapping_end_of_stored() {
     // ◌ ●---◌ ◌ ◌ ◌ ◌ ◌ ◌
     // ◌ ◌ ◌ ◆---◇ ◌ ◌ ◌ ◌
     assert_eq!(
-        range_map.to_vec(),
-        vec![(Range::from(1..3), false), (Range::from(3..5), true)]
+        range_map.into_vec(),
+        vec![(Segment::from(1..3), false), (Segment::from(3..5), true)]
     );
 }
 
 #[test]
 fn new_same_value_immediately_preceding_stored() {
-    let mut range_map: RangeMap<u32, bool> = RangeMap::new();
+    let mut range_map: SegmentMap<u32, bool> = SegmentMap::new();
     // 0 1 2 3 4 5 6 7 8 9
     // ◌ ◌ ◌ ●---◌ ◌ ◌ ◌ ◌
     range_map.insert(3..5, false);
@@ -156,12 +142,12 @@ fn new_same_value_immediately_preceding_stored() {
     range_map.insert(1..3, false);
     // 0 1 2 3 4 5 6 7 8 9
     // ◌ ●-------◌ ◌ ◌ ◌ ◌
-    assert_eq!(range_map.to_vec(), vec![(Range::from(1..5), false)]);
+    assert_eq!(range_map.into_vec(), vec![(Segment::from(1..5), false)]);
 }
 
 #[test]
 fn new_different_value_immediately_preceding_stored() {
-    let mut range_map: RangeMap<u32, bool> = RangeMap::new();
+    let mut range_map: SegmentMap<u32, bool> = SegmentMap::new();
     // 0 1 2 3 4 5 6 7 8 9
     // ◌ ◌ ◌ ◆---◇ ◌ ◌ ◌ ◌
     range_map.insert(3..5, true);
@@ -172,14 +158,14 @@ fn new_different_value_immediately_preceding_stored() {
     // ◌ ●---◌ ◌ ◌ ◌ ◌ ◌ ◌
     // ◌ ◌ ◌ ◆---◇ ◌ ◌ ◌ ◌
     assert_eq!(
-        range_map.to_vec(),
-        vec![(Range::from(1..3), false), (Range::from(3..5), true)]
+        range_map.into_vec(),
+        vec![(Segment::from(1..3), false), (Segment::from(3..5), true)]
     );
 }
 
 #[test]
 fn new_same_value_wholly_inside_stored() {
-    let mut range_map: RangeMap<u32, bool> = RangeMap::new();
+    let mut range_map: SegmentMap<u32, bool> = SegmentMap::new();
     // 0 1 2 3 4 5 6 7 8 9
     // ◌ ●-------◌ ◌ ◌ ◌ ◌
     range_map.insert(1..5, false);
@@ -188,12 +174,12 @@ fn new_same_value_wholly_inside_stored() {
     range_map.insert(2..4, false);
     // 0 1 2 3 4 5 6 7 8 9
     // ◌ ●-------◌ ◌ ◌ ◌ ◌
-    assert_eq!(range_map.to_vec(), vec![(Range::from(1..5), false)]);
+    assert_eq!(range_map.into_vec(), vec![(Segment::from(1..5), false)]);
 }
 
 #[test]
 fn new_different_value_wholly_inside_stored() {
-    let mut range_map: RangeMap<u32, bool> = RangeMap::new();
+    let mut range_map: SegmentMap<u32, bool> = SegmentMap::new();
     // 0 1 2 3 4 5 6 7 8 9
     // ◌ ◆-------◇ ◌ ◌ ◌ ◌
     range_map.insert(1..5, true);
@@ -205,18 +191,18 @@ fn new_different_value_wholly_inside_stored() {
     // ◌ ◌ ◆---◇ ◌ ◌ ◌ ◌ ◌
     // ◌ ◌ ◌ ◌ ●-◌ ◌ ◌ ◌ ◌
     assert_eq!(
-        range_map.to_vec(),
+        range_map.into_vec(),
         vec![
-            (Range::from(1..2), true),
-            (Range::from(2..4), false),
-            (Range::from(4..5), true)
+            (Segment::from(1..2), true),
+            (Segment::from(2..4), false),
+            (Segment::from(4..5), true)
         ]
     );
 }
 
 #[test]
 fn replace_at_end_of_existing_range_should_coalesce() {
-    let mut range_map: RangeMap<u32, bool> = RangeMap::new();
+    let mut range_map: SegmentMap<u32, bool> = SegmentMap::new();
     // 0 1 2 3 4 5 6 7 8 9
     // ◌ ●---◌ ◌ ◌ ◌ ◌ ◌ ◌
     range_map.insert(1..3, false);
@@ -228,7 +214,7 @@ fn replace_at_end_of_existing_range_should_coalesce() {
     range_map.insert(3..5, false);
     // 0 1 2 3 4 5 6 7 8 9
     // ◌ ●-------◌ ◌ ◌ ◌ ◌
-    assert_eq!(range_map.to_vec(), vec![(Range::from(1..5), false)]);
+    assert_eq!(range_map.into_vec(), vec![(Segment::from(1..5), false)]);
 }
 
 #[test]
@@ -252,8 +238,8 @@ fn lots_of_interesting_ranges() {
     ];
 
     ranges_with_values.permutation().for_each(|permutation| {
-        let mut range_map: RangeMap<u32, bool> = RangeMap::new();
-        let mut stupid: StupidU32RangeMap<bool> = StupidU32RangeMap::new();
+        let mut range_map: SegmentMap<u32, bool> = SegmentMap::new();
+        let mut stupid: StupidU32Map<bool> = StupidU32Map::new();
 
         for (k, v) in permutation {
             // Insert it into both maps.
@@ -261,7 +247,7 @@ fn lots_of_interesting_ranges() {
             stupid.insert(k, v);
 
             // At every step, both maps should contain the same stuff.
-            let stupid2: StupidU32RangeMap<bool> = range_map.clone().into();
+            let stupid2: StupidU32Map<bool> = range_map.clone().into();
             assert_eq!(stupid, stupid2);
         }
     });
@@ -273,7 +259,7 @@ fn lots_of_interesting_ranges() {
 
 #[test]
 fn get() {
-    let mut range_map: RangeMap<u32, bool> = RangeMap::new();
+    let mut range_map: SegmentMap<u32, bool> = SegmentMap::new();
     range_map.insert(0..50, false);
     assert_eq!(range_map.get(&49), Some(&false));
     assert_eq!(range_map.get(&50), None);
@@ -281,11 +267,11 @@ fn get() {
 
 #[test]
 fn get_key_value() {
-    let mut range_map: RangeMap<u32, bool> = RangeMap::new();
+    let mut range_map: SegmentMap<u32, bool> = SegmentMap::new();
     range_map.insert(0..50, false);
     assert_eq!(
         range_map.get_range_value(&49),
-        Some((&Range::from(0..50), &false))
+        Some((&Segment::from(0..50), &false))
     );
     assert_eq!(range_map.get_range_value(&50), None);
 }
@@ -296,68 +282,71 @@ fn get_key_value() {
 
 #[test]
 fn remove_from_empty_map() {
-    let mut range_map: RangeMap<u32, bool> = RangeMap::new();
+    let mut range_map: SegmentMap<u32, bool> = SegmentMap::new();
     range_map.remove(0..50);
-    assert_eq!(range_map.to_vec(), vec![]);
+    assert_eq!(range_map.into_vec(), vec![]);
 }
 
 #[test]
 fn remove_non_covered_range_before_stored() {
-    let mut range_map: RangeMap<u32, bool> = RangeMap::new();
+    let mut range_map: SegmentMap<u32, bool> = SegmentMap::new();
     range_map.insert(25..75, false);
     range_map.remove(0..25);
-    assert_eq!(range_map.to_vec(), vec![(Range::from(25..75), false)]);
+    assert_eq!(range_map.into_vec(), vec![(Segment::from(25..75), false)]);
 }
 
 #[test]
 fn remove_non_covered_range_after_stored() {
-    let mut range_map: RangeMap<u32, bool> = RangeMap::new();
+    let mut range_map: SegmentMap<u32, bool> = SegmentMap::new();
     range_map.insert(25..75, false);
     range_map.remove(75..100);
-    assert_eq!(range_map.to_vec(), vec![(Range::from(25..75), false)]);
+    assert_eq!(range_map.into_vec(), vec![(Segment::from(25..75), false)]);
 }
 
 #[test]
 fn remove_overlapping_start_of_stored() {
-    let mut range_map: RangeMap<u32, bool> = RangeMap::new();
+    let mut range_map: SegmentMap<u32, bool> = SegmentMap::new();
     range_map.insert(25..75, false);
     range_map.remove(0..30);
-    assert_eq!(range_map.to_vec(), vec![(Range::from(30..75), false)]);
+    assert_eq!(range_map.into_vec(), vec![(Segment::from(30..75), false)]);
 }
 
 #[test]
 fn remove_middle_of_stored() {
-    let mut range_map: RangeMap<u32, bool> = RangeMap::new();
+    let mut range_map: SegmentMap<u32, bool> = SegmentMap::new();
     range_map.insert(25..75, false);
     range_map.remove(30..70);
     assert_eq!(
-        range_map.to_vec(),
-        vec![(Range::from(25..30), false), (Range::from(70..75), false)]
+        range_map.into_vec(),
+        vec![
+            (Segment::from(25..30), false),
+            (Segment::from(70..75), false)
+        ]
     );
 }
 
 #[test]
 fn remove_overlapping_end_of_stored() {
-    let mut range_map: RangeMap<u32, bool> = RangeMap::new();
+    let mut range_map: SegmentMap<u32, bool> = SegmentMap::new();
     range_map.insert(25..75, false);
     range_map.remove(70..100);
-    assert_eq!(range_map.to_vec(), vec![(Range::from(25..70), false)]);
+    assert_eq!(range_map.into_vec(), vec![(Segment::from(25..70), false)]);
 }
 
 #[test]
 fn remove_exactly_stored() {
-    let mut range_map: RangeMap<u32, bool> = RangeMap::new();
+    let mut range_map: SegmentMap<u32, bool> = SegmentMap::new();
     range_map.insert(25..75, false);
     range_map.remove(25..75);
-    assert_eq!(range_map.to_vec(), vec![]);
+    assert_eq!(range_map.into_vec(), vec![]);
 }
 
 #[test]
 fn remove_superset_of_stored() {
-    let mut range_map: RangeMap<u32, bool> = RangeMap::new();
+    let mut range_map: SegmentMap<u32, bool> = SegmentMap::new();
     range_map.insert(25..75, false);
     range_map.remove(0..100);
-    assert_eq!(range_map.to_vec(), vec![]);
+    assert_eq!(range_map.into_vec(), vec![]);
 }
 
 // Gaps tests
@@ -627,7 +616,7 @@ fn remove_superset_of_stored() {
 
 #[test]
 fn map_debug_repr_looks_right() {
-    let mut map: RangeMap<u32, ()> = RangeMap::new();
+    let mut map: SegmentMap<u32, ()> = SegmentMap::new();
 
     // Empty
     assert_eq!(format!("{:?}", map), "{}");
@@ -653,7 +642,7 @@ fn map_debug_repr_looks_right() {
 //     range_map.insert(1..3, false);
 //     range_map.insert(3..5, true);
 
-//     let cloned = range_map.to_vec();
+//     let cloned = range_map.into_vec();
 //     let consumed = range_map.into_iter().collect::<Vec<_>>();
 
 //     // Correct value

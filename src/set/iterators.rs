@@ -4,7 +4,9 @@ use core::{
     ops::RangeBounds,
 };
 
-use crate::{Range, RangeSet};
+use alloc::vec::Vec;
+
+use crate::{Segment, SegmentSet};
 // TODO: all doctests
 
 // /// See [`alloc::collections::btree_set::ITER_PERFORMANCE_TIPPING_SIZE_DIFF`]
@@ -16,7 +18,7 @@ use crate::{Range, RangeSet};
 // /// step in the search (to find the last range starting BEFORE a point).
 // const ITER_PERFORMANCE_TIPPING_SIZE_DIFF: usize = 16;
 
-impl<T> RangeSet<T> {
+impl<T> SegmentSet<T> {
     pub fn iter(&self) -> Iter<'_, T> {
         Iter(self.map.ranges())
     }
@@ -27,6 +29,11 @@ impl<T> RangeSet<T> {
 
     pub fn is_empty(&self) -> bool {
         self.map.is_empty()
+    }
+
+    /// Converts the set into a [`Vec`] by chaining [`into_iter`] and [`collect`]
+    pub fn into_vec(self) -> Vec<Segment<T>> {
+        self.into_iter().collect()
     }
 
     // range?
@@ -57,15 +64,15 @@ impl<T> RangeSet<T> {
     // pub fn extend_into_gaps(&mut self)
 }
 
-// impl<T: Clone + Ord> FromIterator<Range<T>> for RangeSet<T> {
-//     fn from_iter<I: IntoIterator<Item = Range<T>>>(iter: I) -> RangeSet<T> {
+// impl<T: Clone + Ord> FromIterator<Range<T>> for SegmentSet<T> {
+//     fn from_iter<I: IntoIterator<Item = Range<T>>>(iter: I) -> SegmentSet<T> {
 //         let mut set = Self::new();
 //         set.extend(iter);
 //         set
 //     }
 // }
 
-impl<Item: RangeBounds<T>, T: Clone + Ord> FromIterator<Item> for RangeSet<T> {
+impl<Item: RangeBounds<T>, T: Clone + Ord> FromIterator<Item> for SegmentSet<T> {
     fn from_iter<I: IntoIterator<Item = Item>>(iter: I) -> Self {
         let mut set = Self::new();
         for item in iter {
@@ -75,7 +82,7 @@ impl<Item: RangeBounds<T>, T: Clone + Ord> FromIterator<Item> for RangeSet<T> {
     }
 }
 
-impl<T: Clone + Ord> Extend<Range<T>> for RangeSet<T> {
+impl<T: Clone + Ord> Extend<Segment<T>> for SegmentSet<T> {
     /// Insert all the items from `iter` into `self`.
     ///
     /// **NOTE**: Inserted items will overwrite existing ranges in `self` if
@@ -85,7 +92,7 @@ impl<T: Clone + Ord> Extend<Range<T>> for RangeSet<T> {
     /// Clone is required for insertion, since we can't guarantee elements in `iter`
     /// are ordered or non-overlapping, so ranges may need to be split.
     #[inline]
-    fn extend<Iter: IntoIterator<Item = Range<T>>>(&mut self, iter: Iter) {
+    fn extend<Iter: IntoIterator<Item = Segment<T>>>(&mut self, iter: Iter) {
         // self.map.extend(iter.into_iter().map(|t| (t, ())))
         iter.into_iter().for_each(move |range| {
             self.insert(range);
@@ -98,8 +105,8 @@ impl<T: Clone + Ord> Extend<Range<T>> for RangeSet<T> {
     // }
 }
 
-impl<'a, T: 'a + Ord + Copy> Extend<&'a Range<T>> for RangeSet<T> {
-    fn extend<I: IntoIterator<Item = &'a Range<T>>>(&mut self, iter: I) {
+impl<'a, T: 'a + Ord + Copy> Extend<&'a Segment<T>> for SegmentSet<T> {
+    fn extend<I: IntoIterator<Item = &'a Segment<T>>>(&mut self, iter: I) {
         self.extend(iter.into_iter().cloned());
     }
 
@@ -118,9 +125,9 @@ impl<T: fmt::Debug> fmt::Debug for Iter<'_, T> {
     }
 }
 impl<'a, T> Iterator for Iter<'a, T> {
-    type Item = &'a Range<T>;
+    type Item = &'a Segment<T>;
 
-    fn next(&mut self) -> Option<&'a Range<T>> {
+    fn next(&mut self) -> Option<&'a Segment<T>> {
         self.0.next()
     }
 
@@ -128,15 +135,15 @@ impl<'a, T> Iterator for Iter<'a, T> {
         self.0.size_hint()
     }
 
-    fn last(mut self) -> Option<&'a Range<T>> {
+    fn last(mut self) -> Option<&'a Segment<T>> {
         self.next_back()
     }
 
-    fn min(mut self) -> Option<&'a Range<T>> {
+    fn min(mut self) -> Option<&'a Segment<T>> {
         self.next()
     }
 
-    fn max(mut self) -> Option<&'a Range<T>> {
+    fn max(mut self) -> Option<&'a Segment<T>> {
         self.next_back()
     }
 }
@@ -144,7 +151,7 @@ impl<'a, T> Iterator for Iter<'a, T> {
 impl<T> FusedIterator for Iter<'_, T> {}
 
 impl<'a, T> DoubleEndedIterator for Iter<'a, T> {
-    fn next_back(&mut self) -> Option<&'a Range<T>> {
+    fn next_back(&mut self) -> Option<&'a Segment<T>> {
         self.0.next_back()
     }
 }
@@ -155,8 +162,8 @@ impl<T> ExactSizeIterator for Iter<'_, T> {
     }
 }
 
-impl<T> IntoIterator for RangeSet<T> {
-    type Item = Range<T>;
+impl<T> IntoIterator for SegmentSet<T> {
+    type Item = Segment<T>;
     type IntoIter = IntoIter<T>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -171,8 +178,8 @@ impl<T: fmt::Debug> fmt::Debug for IntoIter<T> {
     }
 }
 impl<T> Iterator for IntoIter<T> {
-    type Item = Range<T>;
-    fn next(&mut self) -> Option<Range<T>> {
+    type Item = Segment<T>;
+    fn next(&mut self) -> Option<Segment<T>> {
         self.0.next().map(|(range, _)| range)
     }
     fn size_hint(&self) -> (usize, Option<usize>) {

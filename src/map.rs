@@ -3,13 +3,10 @@ use core::{
     cmp::{max, Ordering},
     fmt::Debug,
     hash::{Hash, Hasher},
-    ops::{Index, RangeBounds},
+    ops::{Bound, Index, RangeBounds},
 };
 
-use crate::{
-    bounds::{Bound, StartBound},
-    Range,
-};
+use crate::segment::{Segment, Start};
 pub(crate) use key::Key;
 
 pub mod iterators;
@@ -18,12 +15,12 @@ mod key;
 #[cfg(test)]
 mod tests;
 
-/// # RangeMap
+/// # SegmentMap
 ///
 /// A map of non-overlapping ranges to values. Inserted ranges will be merged
 /// with adjacent ranges if they have the same value.
 ///
-/// Internally, [`RangeMap`] is represented by a [`BTreeMap`] in which the keys
+/// Internally, [`SegmentMap`] is represented by a [`BTreeMap`] in which the keys
 /// are represented by a concrete [`Range`] type, sorted by their start values.
 ///
 /// # Examples
@@ -35,7 +32,7 @@ mod tests;
 /// TODO
 ///
 #[derive(Clone)]
-pub struct RangeMap<K, V> {
+pub struct SegmentMap<K, V> {
     pub(crate) map: BTreeMap<Key<K>, V>,
 
     /// Reuseable storage for working set of keys
@@ -47,8 +44,8 @@ pub struct RangeMap<K, V> {
     pub(crate) store: Vec<Key<K>>,
 }
 
-impl<K, V> RangeMap<K, V> {
-    /// Makes a new, empty `RangeMap`.
+impl<K, V> SegmentMap<K, V> {
+    /// Makes a new, empty `SegmentMap`.
     ///
     /// Does not allocate anything on its own.
     ///
@@ -57,9 +54,8 @@ impl<K, V> RangeMap<K, V> {
     /// Basic usage:
     ///
     /// ```
-    /// use rangemap::RangeMap;
-    ///
-    /// let mut map = RangeMap::new();
+    /// # use segmap::*;
+    /// let mut map = SegmentMap::new();
     ///
     /// // entries can now be inserted into the empty map
     /// map.insert(0..1, "a");
@@ -68,22 +64,21 @@ impl<K, V> RangeMap<K, V> {
     where
         K: Ord,
     {
-        RangeMap {
+        SegmentMap {
             map: BTreeMap::new(),
             store: Vec::new(),
         }
     }
 
-    /// Makes a new, empty [`RangeMap`] with a value for the full range.
+    /// Makes a new, empty [`SegmentMap`] with a value for the full range.
     ///
     /// # Examples
     ///
     /// Basic usage:
     ///
     /// ```
-    /// use rangemap::RangeMap;
-    ///
-    /// let mut map = RangeMap::with_value(true);
+    /// # use segmap::*;
+    /// let mut map = SegmentMap::with_value(true);
     ///
     /// // All values will return something
     /// assert_eq!(map[&0], true);
@@ -95,8 +90,8 @@ impl<K, V> RangeMap<K, V> {
         K: Ord,
     {
         let mut inner = BTreeMap::new();
-        inner.insert(Key(Range::full()), value);
-        RangeMap {
+        inner.insert(Key(Segment::full()), value);
+        SegmentMap {
             map: inner,
             store: Vec::new(),
         }
@@ -111,9 +106,8 @@ impl<K, V> RangeMap<K, V> {
     /// Basic usage:
     ///
     /// ```
-    /// use rangemap::RangeMap;
-    ///
-    /// let mut a = RangeMap::new();
+    /// # use segmap::*;
+    /// let mut a = SegmentMap::new();
     /// a.insert(0..1, "a");
     /// a.clear();
     /// assert!(a.is_empty());
@@ -136,9 +130,8 @@ impl<K, V> RangeMap<K, V> {
     /// Basic usage:
     ///
     /// ```
-    /// use rangemap::RangeMap;
-    ///
-    /// let mut map = RangeMap::new();
+    /// # use segmap::*;
+    /// let mut map = SegmentMap::new();
     /// map.insert(0..1, "a");
     /// assert_eq!(map.get(&0), Some(&"a"));
     /// assert_eq!(map.get(&2), None);
@@ -156,21 +149,20 @@ impl<K, V> RangeMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// use rangemap::{Range, RangeMap};
-    ///
-    /// let mut map = RangeMap::new();
+    /// # use segmap::*;
+    /// let mut map = SegmentMap::new();
     /// map.insert(0..1, "a");
-    /// assert_eq!(map.get_range_value(&0), Some((&Range::from(0..1), &"a")));
+    /// assert_eq!(map.get_range_value(&0), Some((&Segment::from(0..1), &"a")));
     /// assert_eq!(map.get_range_value(&2), None);
     /// ```
-    pub fn get_range_value(&self, at: &K) -> Option<(&Range<K>, &V)>
+    pub fn get_range_value(&self, at: &K) -> Option<(&Segment<K>, &V)>
     where
         K: Clone + Ord,
     {
         // The only stored range that could contain the given key is the
         // last stored range whose start is less than or equal to this key.
         self.map
-            .range(..=(StartBound(Bound::Included(at.clone()))))
+            .range(..=(Start(Bound::Included(at.clone()))))
             .rev()
             .map(|(w, v)| (&w.0, v))
             .next()
@@ -186,9 +178,8 @@ impl<K, V> RangeMap<K, V> {
     /// Basic usage:
     ///
     /// ```
-    /// use rangemap::RangeMap;
-    ///
-    /// let mut map = RangeMap::new();
+    /// # use segmap::*;
+    /// let mut map = SegmentMap::new();
     /// map.insert(0..1, "a");
     /// assert_eq!(map.contains(&0), true);
     /// assert_eq!(map.contains(&2), false);
@@ -206,21 +197,20 @@ impl<K, V> RangeMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// use rangemap::{RangeMap, Range, Bound};
-    ///
-    /// let mut map = RangeMap::new();
+    /// # use segmap::*;
+    /// let mut map = SegmentMap::new();
     /// map.insert(0..9, "a");
     /// map.insert(15..30, "b");
     /// map.insert(35..90, "c");
     ///
-    /// assert_eq!(map.bounds(), Some(Range::from(0..90).as_ref()));
+    /// assert_eq!(map.bounds(), Some(Segment::from(0..90).as_ref()));
     /// ```
-    pub fn bounds(&self) -> Option<Range<&K>> {
+    pub fn bounds(&self) -> Option<Segment<&K>> {
         let mut iter = self.map.iter();
         iter.next().map(|(first, _)| {
             if let Some((last, _)) = iter.next_back() {
                 // 2 or more items, use widest possible bounds
-                Range {
+                Segment {
                     start: first.0.start.as_ref(),
                     end: last.0.end.as_ref(),
                 }
@@ -236,9 +226,8 @@ impl<K, V> RangeMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// use rangemap::{RangeMap, Range, Bound};
-    ///
-    /// let mut map = RangeMap::new();
+    /// # use segmap::*;
+    /// let mut map = SegmentMap::new();
     /// map.insert(0..9, "a");
     /// map.insert(15..30, "b");
     /// map.insert(35..90, "c");
@@ -254,9 +243,8 @@ impl<K, V> RangeMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// use rangemap::{RangeMap, Range, Bound};
-    ///
-    /// let mut map = RangeMap::new();
+    /// # use segmap::*;
+    /// let mut map = SegmentMap::new();
     /// map.insert(0..9, "a");
     /// map.insert(15..30, "b");
     /// map.insert(35..90, "c");
@@ -275,9 +263,8 @@ impl<K, V> RangeMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// use rangemap::{RangeMap, Range, Bound};
-    ///
-    /// let mut map = RangeMap::new();
+    /// # use segmap::*;
+    /// let mut map = SegmentMap::new();
     /// map.set(0..5, true);
     /// map.set(5..10, false);
     /// map.set(10..15, true);
@@ -299,7 +286,7 @@ impl<K, V> RangeMap<K, V> {
     pub fn retain<F>(&mut self, mut f: F)
     where
         K: Ord,
-        F: FnMut(&Range<K>, &mut V) -> bool,
+        F: FnMut(&Segment<K>, &mut V) -> bool,
     {
         self.map.retain(|k, v| f(&k.0, v))
     }
@@ -323,18 +310,17 @@ impl<K, V> RangeMap<K, V> {
     /// ranges might be overwritten, another map will be constructed with those
     /// values.
     ///
-    /// **Note**: This will allocate a new underlying [`RangeMap`], though, so an
+    /// **Note**: This will allocate a new underlying [`SegmentMap`], though, so an
     /// option is used in case no ranges were overwritten. If you don't care
-    /// about the overwritten values, use [`RangeMap::set_range`] instead.
+    /// about the overwritten values, use [`SegmentMap::set_range`] instead.
     ///
     /// # Examples
     ///
     /// ## Basic Usage
     ///
     /// ```
-    /// use rangemap::RangeMap;
-    ///
-    /// let mut map = RangeMap::new();
+    /// # use segmap::*;
+    /// let mut map = SegmentMap::new();
     /// map.insert(0..4, "a");
     /// assert_eq!(map.is_empty(), false);
     ///
@@ -346,39 +332,37 @@ impl<K, V> RangeMap<K, V> {
     /// ## Overwriting
     ///
     /// ```
-    /// use rangemap::{RangeMap, Range};
-    ///
-    /// let mut map = RangeMap::new();
+    /// # use segmap::*;
+    /// let mut map = SegmentMap::new();
     /// map.insert(0..10, "a");
     /// let out = map.insert(3..6, "b").unwrap();
     ///
     /// assert_eq!(map[&2], "a");
     /// assert_eq!(map[&4], "b");
     /// assert_eq!(map[&7], "a");
-    /// assert!(out.into_iter().eq(vec![(Range::from(3..6), "a")]));
+    /// assert!(out.into_iter().eq(vec![(Segment::from(3..6), "a")]));
     ///
     /// ```
     ///
     /// ## Coalescing
     ///
     /// ```
-    /// use rangemap::{RangeMap, Range};
-    ///
-    /// let mut map = RangeMap::new();
+    /// # use segmap::*;
+    /// let mut map = SegmentMap::new();
     /// map.insert(0..10, "a");
     /// map.insert(10..20, "a");
     ///
-    /// assert!(map.into_iter().eq(vec![(Range::from(0..20), "a")]));
+    /// assert!(map.into_iter().eq(vec![(Segment::from(0..20), "a")]));
     ///
     /// ```
     ///
     /// # See Also
     ///
-    /// - [`RangeMap::set`] if you don't want to return the values
+    /// - [`SegmentMap::set`] if you don't want to return the values
     /// overwritten
-    /// - [`RangeMap::insert_if_empty`] if you only want to insert the value if
+    /// - [`SegmentMap::insert_if_empty`] if you only want to insert the value if
     /// no overlaps occur
-    /// - [`RangeMap::insert_in_gaps`] if you only want to insert the value for
+    /// - [`SegmentMap::insert_in_gaps`] if you only want to insert the value for
     /// the empty parts of the range, not overwriting any values.
     ///
     pub fn insert<R>(&mut self, range: R, value: V) -> Option<Self>
@@ -388,14 +372,14 @@ impl<K, V> RangeMap<K, V> {
         V: Clone + Eq,
     {
         // assert!(range.start_bound() <= range.end_bound());
-        let range = Range::from(&range);
+        let range = Segment::from(&range);
         let mut removed_ranges = MaybeMap::Uninitialized;
         self.insert_internal(range, value, &mut removed_ranges);
         removed_ranges.into()
     }
 
     /// Set a value for the specified range, overwriting any existing subset
-    /// ranges. This is the same as [`RangeMap::insert`], but without a return
+    /// ranges. This is the same as [`SegmentMap::insert`], but without a return
     /// value, so overlapping ranges will be truncated and adjacent ranges with
     /// the same value will be merged.
     ///
@@ -404,9 +388,8 @@ impl<K, V> RangeMap<K, V> {
     /// ## Basic Usage
     ///
     /// ```
-    /// use rangemap::RangeMap;
-    ///
-    /// let mut map = RangeMap::new();
+    /// # use segmap::*;
+    /// let mut map = SegmentMap::new();
     /// map.set(0..4, "a");
     /// assert_eq!(map.is_empty(), false);
     ///
@@ -418,9 +401,8 @@ impl<K, V> RangeMap<K, V> {
     /// ## Overwriting
     ///
     /// ```
-    /// use rangemap::RangeMap;
-    ///
-    /// let mut map = RangeMap::new();
+    /// # use segmap::*;
+    /// let mut map = SegmentMap::new();
     /// map.set(0..10, "a");
     /// map.set(3..6, "b");
     ///
@@ -433,22 +415,21 @@ impl<K, V> RangeMap<K, V> {
     /// ## Coalescing
     ///
     /// ```
-    /// use rangemap::{RangeMap, Range};
-    ///
-    /// let mut map = RangeMap::new();
+    /// # use segmap::*;
+    /// let mut map = SegmentMap::new();
     /// map.set(0..10, "a");
     /// map.set(10..20, "a");
     ///
-    /// assert!(map.into_iter().eq(vec![(Range::from(0..20), "a")]))
+    /// assert!(map.into_iter().eq(vec![(Segment::from(0..20), "a")]))
     ///
     /// ```
     ///
     /// # See Also
     ///
-    /// - [`RangeMap::insert`] if you want the value overwritten
-    /// - [`RangeMap::insert_if_empty`] if you only want to insert the value if
+    /// - [`SegmentMap::insert`] if you want the value overwritten
+    /// - [`SegmentMap::insert_if_empty`] if you only want to insert the value if
     /// no overlaps occur
-    /// - [`RangeMap::insert_in_gaps`] if you only want to insert the value for
+    /// - [`SegmentMap::insert_in_gaps`] if you only want to insert the value for
     /// the empty parts of the range, not overwriting any values.
     ///
     pub fn set<R>(&mut self, range: R, value: V)
@@ -457,7 +438,7 @@ impl<K, V> RangeMap<K, V> {
         K: Clone + Ord,
         V: Clone + Eq,
     {
-        let range = Range::from(&range);
+        let range = Segment::from(&range);
         let mut removed_ranges = MaybeMap::Never;
         self.insert_internal(range, value, &mut removed_ranges);
     }
@@ -468,9 +449,8 @@ impl<K, V> RangeMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// use rangemap::RangeMap;
-    ///
-    /// let mut map = RangeMap::new();
+    /// # use segmap::*;
+    /// let mut map = SegmentMap::new();
     /// assert!(map.insert_if_empty(0..5, true).is_none());
     /// assert!(map.insert_if_empty(5..10, true).is_none());
     /// assert!(map.insert_if_empty(3..6, true).is_some());
@@ -479,9 +459,9 @@ impl<K, V> RangeMap<K, V> {
     ///
     /// # See Also
     ///
-    /// - [`RangeMap::insert`] or [`RangeMap::set`] if you want to overwrite
+    /// - [`SegmentMap::insert`] or [`SegmentMap::set`] if you want to overwrite
     /// existing values
-    /// - [`RangeMap::insert_in_gaps`] if you only want to insert the value for
+    /// - [`SegmentMap::insert_in_gaps`] if you only want to insert the value for
     /// the empty parts of the range
     ///
     pub fn insert_if_empty<R>(&mut self, range: R, value: V) -> Option<V>
@@ -491,7 +471,7 @@ impl<K, V> RangeMap<K, V> {
         V: Clone + Eq,
     {
         // Get the ranges before and after this one
-        let range = Range::from(&range);
+        let range = Segment::from(&range);
 
         // Check for any overlaps
         let overlapped = if let Some(upper_bound) = range.end.after() {
@@ -521,30 +501,29 @@ impl<K, V> RangeMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// use rangemap::{RangeMap, Range};
-    ///
-    /// let mut map = RangeMap::new();
+    /// # use segmap::*;
+    /// let mut map = SegmentMap::new();
     /// map.set(5..10, "a");
     /// map.set(15..20, "a");
     /// map.insert_in_gaps(0..30, "b");
     ///
     /// assert!(map.into_iter().eq(vec![
-    ///     (Range::from(0..5), "b"),
-    ///     (Range::from(5..10), "a"),
-    ///     (Range::from(10..15), "b"),
-    ///     (Range::from(15..20), "a"),
-    ///     (Range::from(20..30), "b"),
+    ///     (Segment::from(0..5), "b"),
+    ///     (Segment::from(5..10), "a"),
+    ///     (Segment::from(10..15), "b"),
+    ///     (Segment::from(15..20), "a"),
+    ///     (Segment::from(20..30), "b"),
     /// ]));
     ///
     /// ```
     ///
     /// # See Also
     ///
-    /// - [`RangeMap::insert`] or [`RangeMap::set`] if you want to overwrite
+    /// - [`SegmentMap::insert`] or [`SegmentMap::set`] if you want to overwrite
     /// existing values
-    /// - [`RangeMap::insert_if_empty`] if you only want to insert the value if
+    /// - [`SegmentMap::insert_if_empty`] if you only want to insert the value if
     /// no overlaps occur
-    /// - [`RangeMap::with_value`] if you'd instead like to construct your map
+    /// - [`SegmentMap::with_value`] if you'd instead like to construct your map
     /// with a default value for all possible ranges
     ///
     pub fn insert_in_gaps<R>(&mut self, range: R, value: V)
@@ -553,7 +532,7 @@ impl<K, V> RangeMap<K, V> {
         K: Clone + Ord,
         V: Clone + Eq,
     {
-        let mut range = Range::from(&range);
+        let mut range = Segment::from(&range);
 
         // In case this is an empty map, exit early
         if self.map.is_empty() {
@@ -616,7 +595,7 @@ impl<K, V> RangeMap<K, V> {
                 // (it shouldn't ever by greater, but could be equal)
                 if successor.0.start > range.start {
                     self.map.insert(
-                        Key(Range {
+                        Key(Segment {
                             start: range.start.clone(),
                             end: successor
                                 .0
@@ -647,16 +626,15 @@ impl<K, V> RangeMap<K, V> {
     /// Remove all values in a given range, returning the removed values.
     /// Overlapping ranges will be truncated at the bounds of this range.
     ///
-    /// **Note**: This will allocate another [`RangeMap`] for returning the
+    /// **Note**: This will allocate another [`SegmentMap`] for returning the
     /// removed ranges, so if you don't care about them, use
-    /// [`RangeMap::clear_range`] instead
+    /// [`SegmentMap::clear_range`] instead
     ///
     /// # Examples
     ///
     /// ```
-    /// use rangemap::RangeMap;
-    ///
-    /// let mut map = RangeMap::new();
+    /// # use segmap::*;
+    /// let mut map = SegmentMap::new();
     /// map.insert(0..=10, 5);
     /// let removed = map.remove(2..4).unwrap();
     ///
@@ -672,7 +650,7 @@ impl<K, V> RangeMap<K, V> {
     ///
     /// # See Also
     ///
-    /// - [`RangeMap::clear_range`] if you don't care about the removed values
+    /// - [`SegmentMap::clear_range`] if you don't care about the removed values
     ///
     pub fn remove<R: core::ops::RangeBounds<K>>(&mut self, range: R) -> Option<Self>
     where
@@ -680,7 +658,7 @@ impl<K, V> RangeMap<K, V> {
         V: Clone,
     {
         let mut removed_ranges = MaybeMap::Uninitialized;
-        self.remove_internal(Range::from(&range), &mut removed_ranges);
+        self.remove_internal(Segment::from(&range), &mut removed_ranges);
         removed_ranges.into()
     }
 
@@ -692,9 +670,8 @@ impl<K, V> RangeMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// use rangemap::RangeMap;
-    ///
-    /// let mut map = RangeMap::new();
+    /// # use segmap::*;
+    /// let mut map = SegmentMap::new();
     /// map.insert(0..=10, 5);
     /// map.clear_range(2..4);
     ///
@@ -707,7 +684,7 @@ impl<K, V> RangeMap<K, V> {
     ///
     /// # See Also
     ///
-    /// - [`RangeMap::remove`] if you want the removed values
+    /// - [`SegmentMap::remove`] if you want the removed values
     ///
     pub fn clear_range<R: core::ops::RangeBounds<K>>(&mut self, range: R)
     where
@@ -715,7 +692,7 @@ impl<K, V> RangeMap<K, V> {
         V: Clone,
     {
         let mut removed_ranges = MaybeMap::Never;
-        self.remove_internal(Range::from(&range), &mut removed_ranges);
+        self.remove_internal(Segment::from(&range), &mut removed_ranges);
     }
 
     /// Moves all elements from `other` into `Self`, leaving `other` empty.
@@ -725,14 +702,13 @@ impl<K, V> RangeMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// use rangemap::RangeMap;
-    ///
-    /// let mut a = RangeMap::new();
+    /// # use segmap::*;
+    /// let mut a = SegmentMap::new();
     /// a.insert(0..1, "a");
     /// a.insert(1..2, "b");
     /// a.insert(2..3, "c");
     ///
-    /// let mut b = RangeMap::new();
+    /// let mut b = SegmentMap::new();
     /// b.insert(2..3, "d");
     /// b.insert(3..4, "e");
     /// b.insert(4..5, "f");
@@ -788,9 +764,8 @@ impl<K, V> RangeMap<K, V> {
     /// # Basic Usage
     ///
     /// ```
-    /// use rangemap::{RangeMap, Range, Bound};
-    ///
-    /// let mut a = RangeMap::new();
+    /// # use segmap::*;
+    /// let mut a = SegmentMap::new();
     /// a.insert(0..1, "a");
     /// a.insert(1..2, "b");
     /// a.insert(2..3, "c");
@@ -799,21 +774,20 @@ impl<K, V> RangeMap<K, V> {
     /// let b = a.split_off(Bound::Included(2));
     ///
     /// assert!(a.into_iter().eq(vec![
-    ///     (Range::from(0..1), "a"),
-    ///     (Range::from(1..2), "b"),
+    ///     (Segment::from(0..1), "a"),
+    ///     (Segment::from(1..2), "b"),
     /// ]));
     /// assert!(b.into_iter().eq(vec![
-    ///     (Range::from(2..3), "c"),
-    ///     (Range::from(3..4), "d"),
+    ///     (Segment::from(2..3), "c"),
+    ///     (Segment::from(3..4), "d"),
     /// ]));
     /// ```
     ///
     /// ## Mixed Bounds
     ///
     /// ```
-    /// use rangemap::{RangeMap, Bound};
-    ///
-    /// let mut a = RangeMap::new();
+    /// # use segmap::*;
+    /// let mut a = SegmentMap::new();
     /// a.insert(0..1, "a");
     /// a.insert(1..2, "b");
     /// a.insert(2..3, "c");
@@ -852,7 +826,7 @@ impl<K, V> RangeMap<K, V> {
         K: Clone + Ord,
         V: Clone,
     {
-        let at = StartBound(at);
+        let at = Start(at);
         if self.is_empty() {
             return Self::new();
         }
@@ -872,14 +846,14 @@ impl<K, V> RangeMap<K, V> {
 
                     // Reinsert truncated range in each
                     self.map.insert(
-                        Key(Range {
+                        Key(Segment {
                             start: split_range.0.start.clone(),
                             end: left_end.cloned(),
                         }),
                         value.clone(),
                     );
                     other.insert(
-                        Key(Range {
+                        Key(Segment {
                             start: at.clone(),
                             end: split_range.0.end,
                         }),
@@ -904,7 +878,7 @@ impl<K, V> RangeMap<K, V> {
     /// Internal implementation for [`insert`], [`set`], and similar
     fn insert_internal(
         &mut self,
-        mut range: Range<K>,
+        mut range: Segment<K>,
         value: V,
         removed_ranges: &mut MaybeMap<K, V>,
     ) where
@@ -992,7 +966,7 @@ impl<K, V> RangeMap<K, V> {
                         // If overlapping, we need to split and reinsert it
                         if successor.0.end > range.end {
                             self.map.insert(
-                                Key(Range {
+                                Key(Segment {
                                     start: bound_after,
                                     end: core::mem::replace(
                                         &mut successor.0.end,
@@ -1040,7 +1014,7 @@ impl<K, V> RangeMap<K, V> {
     fn split_key(
         &mut self,
         key: &Key<K>,
-        range_to_remove: &Range<K>,
+        range_to_remove: &Segment<K>,
         removed_ranges: &mut MaybeMap<K, V>,
     ) where
         K: Clone + Ord,
@@ -1053,7 +1027,7 @@ impl<K, V> RangeMap<K, V> {
         // Insert a split of the range to the left (if necessary)
         if removed_range.0.start < range_to_remove.start {
             self.map.insert(
-                Key(Range {
+                Key(Segment {
                     start: core::mem::replace(
                         &mut removed_range.0.start,
                         range_to_remove.start.clone(),
@@ -1067,7 +1041,7 @@ impl<K, V> RangeMap<K, V> {
         // Insert a split of the range to the right (if necessary)
         if removed_range.0.end > range_to_remove.end {
             self.map.insert(
-                Key(Range {
+                Key(Segment {
                     start: range_to_remove.bound_after().unwrap().cloned(), // same as above
                     end: core::mem::replace(&mut removed_range.0.end, range_to_remove.end.clone()),
                 }),
@@ -1077,7 +1051,7 @@ impl<K, V> RangeMap<K, V> {
         removed_ranges.insert(removed_range, value);
     }
 
-    pub(crate) fn remove_internal(&mut self, range: Range<K>, removed_ranges: &mut MaybeMap<K, V>)
+    pub(crate) fn remove_internal(&mut self, range: Segment<K>, removed_ranges: &mut MaybeMap<K, V>)
     where
         K: Clone + Ord,
         V: Clone,
@@ -1120,7 +1094,7 @@ impl<K, V> RangeMap<K, V> {
             // Must be the last range
             if successor.0.end > range.end {
                 self.map.insert(
-                    Key(Range {
+                    Key(Segment {
                         start: range.bound_after().unwrap().cloned(), // Implicitly not none due to less than successor end
                         end: successor.0.end.clone(),
                     }),
@@ -1139,7 +1113,7 @@ impl<K, V> RangeMap<K, V> {
 // We can't just derive this automatically, because that would
 // expose irrelevant (and private) implementation details.
 // Instead implement it in the same way that the underlying BTreeMap does.
-impl<K: Debug, V: Debug> Debug for RangeMap<K, V>
+impl<K: Debug, V: Debug> Debug for SegmentMap<K, V>
 where
     K: Ord + Clone,
     V: Eq + Clone,
@@ -1149,7 +1123,7 @@ where
     }
 }
 
-impl<K: Hash, V: Hash> Hash for RangeMap<K, V> {
+impl<K: Hash, V: Hash> Hash for SegmentMap<K, V> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         for elt in self {
             elt.hash(state);
@@ -1157,32 +1131,32 @@ impl<K: Hash, V: Hash> Hash for RangeMap<K, V> {
     }
 }
 
-impl<K: Ord, V> Default for RangeMap<K, V> {
+impl<K: Ord, V> Default for SegmentMap<K, V> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<K: PartialEq, V: PartialEq> PartialEq for RangeMap<K, V> {
+impl<K: PartialEq, V: PartialEq> PartialEq for SegmentMap<K, V> {
     fn eq(&self, other: &Self) -> bool {
         self.len() == other.len() && self.iter().zip(other).all(|(a, b)| a == b)
     }
 }
-impl<K: Eq, V: Eq> Eq for RangeMap<K, V> {}
-impl<K: PartialOrd + Ord, V: PartialOrd> PartialOrd for RangeMap<K, V> {
+impl<K: Eq, V: Eq> Eq for SegmentMap<K, V> {}
+impl<K: PartialOrd + Ord, V: PartialOrd> PartialOrd for SegmentMap<K, V> {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.map.iter().partial_cmp(other.map.iter())
     }
 }
-impl<K: Ord, V: Ord> Ord for RangeMap<K, V> {
+impl<K: Ord, V: Ord> Ord for SegmentMap<K, V> {
     #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
         self.map.iter().cmp(other.map.iter())
     }
 }
 
-impl<K, V> Index<&K> for RangeMap<K, V>
+impl<K, V> Index<&K> for SegmentMap<K, V>
 where
     K: Clone + Ord,
     V: Eq + Clone,
@@ -1193,7 +1167,7 @@ where
     ///
     /// # Panics
     ///
-    /// Panics if the key is not present in the `RangeMap`.
+    /// Panics if the key is not present in the `SegmentMap`.
     #[inline]
     fn index(&self, key: &K) -> &V {
         self.get(key).expect("no entry found for key")
@@ -1229,10 +1203,10 @@ impl<K: Ord, V> MaybeMap<K, V> {
     }
 }
 
-impl<K, V> From<MaybeMap<K, V>> for Option<RangeMap<K, V>> {
+impl<K, V> From<MaybeMap<K, V>> for Option<SegmentMap<K, V>> {
     fn from(map: MaybeMap<K, V>) -> Self {
         if let MaybeMap::Map(map) = map {
-            Some(RangeMap {
+            Some(SegmentMap {
                 map,
                 store: Vec::new(),
             })

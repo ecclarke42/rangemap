@@ -6,16 +6,16 @@ use core::{
 
 /// Directional bound for the start of a monotonically increasing segement
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
-pub(crate) struct StartBound<T>(pub(crate) Bound<T>);
-impl<T: Debug> Debug for StartBound<T> {
+pub(crate) struct Start<T>(pub(crate) Bound<T>);
+impl<T: Debug> Debug for Start<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         self.0.fmt(f)
     }
 }
 
-impl<T> StartBound<T> {
-    pub fn as_ref(&self) -> StartBound<&T> {
-        StartBound(self.as_bound_inner_ref())
+impl<T> Start<T> {
+    pub fn as_ref(&self) -> Start<&T> {
+        Start(self.as_bound_inner_ref())
     }
 
     pub fn as_bound_inner_ref(&self) -> Bound<&T> {
@@ -38,16 +38,16 @@ impl<T> StartBound<T> {
     //         Unbounded => None,
     //     }
     // }
-    pub fn before(&self) -> Option<EndBound<&T>> {
+    pub fn before(&self) -> Option<End<&T>> {
         match &self.0 {
-            Excluded(t) => Some(EndBound(Included(t))),
-            Included(t) => Some(EndBound(Excluded(t))),
+            Excluded(t) => Some(End(Included(t))),
+            Included(t) => Some(End(Excluded(t))),
             Unbounded => None,
         }
     }
 
     /// PartialOrd workaround
-    pub fn cmp_end(&self, end: &EndBound<T>) -> Ordering
+    pub fn cmp_end(&self, end: &End<T>) -> Ordering
     where
         T: Ord,
     {
@@ -68,26 +68,26 @@ impl<T> StartBound<T> {
     }
 }
 
-impl<'a, T> StartBound<&'a T> {
-    // pub fn into_before(self) -> Option<EndBound<&'a T>> {
+impl<'a, T> Start<&'a T> {
+    // pub fn into_before(self) -> Option<End<&'a T>> {
     //     match self.0 {
-    //         Excluded(t) => Some(EndBound(Included(t))),
-    //         Included(t) => Some(EndBound(Excluded(t))),
+    //         Excluded(t) => Some(End(Included(t))),
+    //         Included(t) => Some(End(Excluded(t))),
     //         Unbounded => None,
     //     }
     // }
-    pub fn borrow_before(&self) -> Option<EndBound<&'a T>> {
+    pub fn borrow_before(&self) -> Option<End<&'a T>> {
         match self.0 {
-            Excluded(t) => Some(EndBound(Included(t))),
-            Included(t) => Some(EndBound(Excluded(t))),
+            Excluded(t) => Some(End(Included(t))),
+            Included(t) => Some(End(Excluded(t))),
             Unbounded => None,
         }
     }
 }
 
-impl<T: Clone> StartBound<&T> {
-    pub fn cloned(&self) -> StartBound<T> {
-        StartBound(match self.0 {
+impl<T: Clone> Start<&T> {
+    pub fn cloned(&self) -> Start<T> {
+        Start(match self.0 {
             Excluded(t) => Excluded(t.clone()),
             Included(t) => Included(t.clone()),
             Unbounded => Unbounded,
@@ -95,14 +95,14 @@ impl<T: Clone> StartBound<&T> {
     }
 }
 
-impl<T: Ord> PartialOrd for StartBound<T> {
+impl<T: Ord> PartialOrd for Start<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<T: Ord> Ord for StartBound<T> {
-    fn cmp(&self, other: &StartBound<T>) -> Ordering {
+impl<T: Ord> Ord for Start<T> {
+    fn cmp(&self, other: &Start<T>) -> Ordering {
         match (&self.0, &other.0) {
             // Unbounded is always less than bounded, for purposes of
             // comparison, Unbounded is equal to itself
@@ -130,20 +130,20 @@ impl<T: Ord> Ord for StartBound<T> {
 
 /// Directional bound for the end of a monotonically increasing segement
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
-pub(crate) struct EndBound<T>(pub(crate) Bound<T>);
-impl<T: Debug> Debug for EndBound<T> {
+pub(crate) struct End<T>(pub(crate) Bound<T>);
+impl<T: Debug> Debug for End<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         self.0.fmt(f)
     }
 }
-impl<T> From<EndBound<T>> for Bound<T> {
-    fn from(b: EndBound<T>) -> Self {
+impl<T> From<End<T>> for Bound<T> {
+    fn from(b: End<T>) -> Self {
         b.0
     }
 }
-impl<T> EndBound<T> {
-    pub fn as_ref(&self) -> EndBound<&T> {
-        EndBound(self.as_bound_inner_ref())
+impl<T> End<T> {
+    pub fn as_ref(&self) -> End<&T> {
+        End(self.as_bound_inner_ref())
     }
     pub fn as_bound_inner_ref(&self) -> Bound<&T> {
         match &self.0 {
@@ -164,15 +164,15 @@ impl<T> EndBound<T> {
     //         Unbounded => None,
     //     }
     // }
-    pub fn after(&self) -> Option<StartBound<&T>> {
+    pub fn after(&self) -> Option<Start<&T>> {
         match &self.0 {
-            Excluded(t) => Some(StartBound(Included(t))),
-            Included(t) => Some(StartBound(Excluded(t))),
+            Excluded(t) => Some(Start(Included(t))),
+            Included(t) => Some(Start(Excluded(t))),
             Unbounded => None,
         }
     }
     /// PartialOrd workaround
-    pub fn cmp_start(&self, start: &StartBound<T>) -> Ordering
+    pub fn cmp_start(&self, start: &Start<T>) -> Ordering
     where
         T: Ord,
     {
@@ -180,26 +180,26 @@ impl<T> EndBound<T> {
     }
 }
 
-impl<'a, T> EndBound<&'a T> {
-    // pub fn into_after(self) -> Option<StartBound<&'a T>> {
+impl<'a, T> End<&'a T> {
+    // pub fn into_after(self) -> Option<Start<&'a T>> {
     //     match self.0 {
-    //         Excluded(t) => Some(StartBound(Included(t))),
-    //         Included(t) => Some(StartBound(Excluded(t))),
+    //         Excluded(t) => Some(Start(Included(t))),
+    //         Included(t) => Some(Start(Excluded(t))),
     //         Unbounded => None,
     //     }
     // }
-    pub fn borrow_after(&self) -> Option<StartBound<&'a T>> {
+    pub fn borrow_after(&self) -> Option<Start<&'a T>> {
         match self.0 {
-            Excluded(t) => Some(StartBound(Included(t))),
-            Included(t) => Some(StartBound(Excluded(t))),
+            Excluded(t) => Some(Start(Included(t))),
+            Included(t) => Some(Start(Excluded(t))),
             Unbounded => None,
         }
     }
 }
 
-impl<T: Clone> EndBound<&T> {
-    pub fn cloned(&self) -> EndBound<T> {
-        EndBound(match self.0 {
+impl<T: Clone> End<&T> {
+    pub fn cloned(&self) -> End<T> {
+        End(match self.0 {
             Excluded(t) => Excluded(t.clone()),
             Included(t) => Included(t.clone()),
             Unbounded => Unbounded,
@@ -207,13 +207,13 @@ impl<T: Clone> EndBound<&T> {
     }
 }
 
-impl<T: Ord> PartialOrd for EndBound<T> {
+impl<T: Ord> PartialOrd for End<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
-impl<T: Ord> Ord for EndBound<T> {
-    fn cmp(&self, other: &EndBound<T>) -> Ordering {
+impl<T: Ord> Ord for End<T> {
+    fn cmp(&self, other: &End<T>) -> Ordering {
         match (&self.0, &other.0) {
             // Unbounded is always greater than bounded, for purposes of
             // comparison, Unbounded is equal to itself

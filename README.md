@@ -1,25 +1,25 @@
-# [`RangeMap`]
+# [`segmap`]
 
-<!-- [![Crate](https://img.shields.io/crates/v/rangemap.svg)](https://crates.io/crates/rangemap)
-[![Docs](https://docs.rs/rangemap/badge.svg)](https://docs.rs/rangemap)
-[![Build status](https://github.com/jeffparsons/rangemap/workflows/CI/badge.svg)](https://github.com/jeffparsons/rangemap/actions)
-[![Rust](https://img.shields.io/badge/rust-1.43%2B-blue.svg?maxAge=3600)](https://github.com/jeffparsons/rangemap) -->
+<!-- [![Crate](https://img.shields.io/crates/v/segmap.svg)](https://crates.io/crates/segmap)
+[![Docs](https://docs.rs/segmap/badge.svg)](https://docs.rs/segmap)
+[![Build status](https://github.com/ecclarke42/segmap/workflows/CI/badge.svg)](https://github.com/ecclarke42/segmap/actions)
+[![Rust](https://img.shields.io/badge/rust-1.43%2B-blue.svg?maxAge=3600)](https://github.com/ecclarke42/segmap) -->
 <!-- Don't forget to update the GitHub actions config when bumping minimum Rust version. -->
 
-`RangeMap` is a map data structures whose keys are stored as ranges.
-Contiguous and overlapping ranges that map to the same value are coalesced into
-a single range.
+`segmap` exposes `SegmentMap`, a map data structure whose keys are stored as
+ranges. Contiguous and overlapping ranges that map to the same value are
+coalesced into a single range.
 
-A correspoinding `RangeSet` structure is also provided.
+A correspoinding `SegmentSet` structure is also provided.
 
-## The `Range<T>` Type
+## The `Segment<T>` Type
 
-`RangeMap` supports all types of input range types in the same map and coerces
-them all to a common range type for internal representation. A `Range<T>` is
+`SegmentMap` supports all types of input range types in the same map and coerces
+them all to a common range type for internal representation. A `Segment<T>` is
 always represented as increasing, so "backwards" ranges will be flipped for
 insertion.
 
-Most methods on `RangeMap` and `RangeSet` accept a generic argument for the
+Most methods on `SegmentMap` and `SegmentSet` accept a generic argument for the
 range, which only needs to implement `RangeBounds`.
 
 ## Example: use with Chrono
@@ -27,10 +27,10 @@ range, which only needs to implement `RangeBounds`.
 ```rust
 use chrono::offset::TimeZone;
 use chrono::{Duration, Utc};
-use rangemap::RangeMap;
+use segmap::SegmentMap;
 
 let people = ["Alice", "Bob", "Carol"];
-let mut roster = RangeMap::new();
+let mut roster = SegmentMap::new();
 
 // Set up initial roster.
 let start_of_roster = Utc.ymd(2019, 1, 7);
@@ -83,9 +83,4 @@ introduced in the future, and will be gated behind a default-on
 See [The Rust Programming Language](https://doc.rust-lang.org/1.7.0/book/no-stdlib.html)
 book for general information about operating without the standard library.
 
-[`rangemap`]: https://docs.rs/rangemap/latest/rangemap/struct.RangeMap.html
-[`rangeinclusivemap`]: https://docs.rs/rangemap/latest/rangemap/struct.RangeInclusiveMap.html
-[`rangeset`]: https://docs.rs/rangemap/latest/rangemap/struct.RangeSet.html
-[`rangeinclusiveset`]: https://docs.rs/rangemap/latest/rangemap/struct.RangeInclusiveSet.html
-[`range`]: https://doc.rust-lang.org/stable/std/ops/struct.Range.html
-[`rangeinclusive`]: https://doc.rust-lang.org/stable/std/ops/struct.RangeInclusive.html
+[`segmap`]: https://docs.rs/segmap/latest/segmap/struct.SegmentMap.html

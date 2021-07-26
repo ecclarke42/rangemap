@@ -3,7 +3,7 @@ use core::fmt::{self, Debug};
 use crate::{
     map::{Key, MaybeMap},
     Bound::{self, *},
-    Range, RangeBounds, RangeMap,
+    RangeBounds, Segment, SegmentMap,
 };
 
 pub mod iterators;
@@ -12,73 +12,72 @@ pub mod ops;
 #[cfg(test)]
 mod tests;
 
-/// # RangeSet
+/// # SegmentSet
 ///
-/// A set based on a [`RangeMap`]. Like [`RangeMap`], adjacent ranges will be
+/// A set based on a [`SegmentMap`]. Like [`SegmentMap`], adjacent ranges will be
 /// merged into a single range.
 ///
-/// See [`RangeMap`]'s documentation for more details on implementation. The
-/// internal representation of this `struct` is is a `RangeMap<T, ()>`
+/// See [`SegmentMap`]'s documentation for more details on implementation. The
+/// internal representation of this `struct` is is a `SegmentMap<T, ()>`
 ///
 /// # Examples
 ///
 /// ```
-/// use rangemap::{Range, RangeSet};
-///
-/// let mut ranges = RangeSet::new();
+/// # use segmap::*;
+/// let mut set = SegmentSet::new();
 ///
 /// // Add some ranges
-/// ranges.insert(0..5);
-/// ranges.insert(5..10); // Note, this will be merged with 0..5!
-/// ranges.insert(20..25);
+/// set.insert(0..5);
+/// set.insert(5..10); // Note, this will be merged with 0..5!
+/// set.insert(20..25);
 ///
 /// // Check if a point is covered
-/// assert!(ranges.contains(&7));
-/// assert!(!ranges.contains(&12));
+/// assert!(set.contains(&7));
+/// assert!(!set.contains(&12));
 ///
 /// // Remove a range (or parts of some ranges)
-/// assert!(ranges.contains(&5));
-/// assert!(ranges.contains(&24));
-/// ranges.remove(3..6);
-/// ranges.remove(22..);
-/// assert!(!ranges.contains(&5));
-/// assert!(!ranges.contains(&24));
+/// assert!(set.contains(&5));
+/// assert!(set.contains(&24));
+/// set.remove(3..6);
+/// set.remove(22..);
+/// assert!(!set.contains(&5));
+/// assert!(!set.contains(&24));
 ///
 /// // Check which ranges are covered
-/// assert!(ranges.into_iter().eq(vec![
-///     Range::from(0..3),
-///     Range::from(6..10),
-///     Range::from(20..22),
+/// assert!(set.into_iter().eq(vec![
+///     Segment::from(0..3),
+///     Segment::from(6..10),
+///     Segment::from(20..22),
 /// ]));
 /// ```
 ///
 #[derive(Clone)]
-pub struct RangeSet<T> {
-    pub(crate) map: RangeMap<T, ()>,
+pub struct SegmentSet<T> {
+    pub(crate) map: SegmentMap<T, ()>,
 }
 
-impl<T> RangeSet<T> {
-    /// Makes a new empty `RangeSet`.
+impl<T> SegmentSet<T> {
+    /// Makes a new empty `SegmentSet`.
     pub fn new() -> Self
     where
         T: Ord,
     {
-        RangeSet {
-            map: RangeMap::new(),
+        SegmentSet {
+            map: SegmentMap::new(),
         }
     }
 
-    /// Make a new `RangeSet` with a single range present, representing all
+    /// Make a new `SegmentSet` with a single range present, representing all
     /// possible values.
     ///
     /// ```
-    /// use rangemap::RangeSet;
+    /// # use segmap::*;
     ///
     /// // Thus, this
-    /// let full = RangeSet::<u32>::full();
+    /// let full = SegmentSet::<u32>::full();
     ///
     /// // Is equivalent to
-    /// let mut manual = RangeSet::new();
+    /// let mut manual = SegmentSet::new();
     /// manual.insert(..);
     ///
     /// assert_eq!(full, manual);
@@ -90,7 +89,7 @@ impl<T> RangeSet<T> {
         let mut set = Self::new();
         set.map
             .map
-            .insert(Key(Range::new(Unbounded, Unbounded)), ());
+            .insert(Key(Segment::new(Unbounded, Unbounded)), ());
         set
     }
 
@@ -99,9 +98,8 @@ impl<T> RangeSet<T> {
     /// # Examples
     ///
     /// ```
-    /// use rangemap::RangeSet;
-    ///
-    /// let mut set = RangeSet::new();
+    /// # use segmap::*;
+    /// let mut set = SegmentSet::new();
     /// set.insert(0..1);
     /// set.clear();
     /// assert!(set.is_empty());
@@ -115,9 +113,8 @@ impl<T> RangeSet<T> {
     /// # Examples
     ///
     /// ```
-    /// use rangemap::RangeSet;
-    ///
-    /// let mut set = RangeSet::new();
+    /// # use segmap::*;
+    /// let mut set = SegmentSet::new();
     /// set.insert(0..5);
     /// assert!(set.contains(&3));
     /// ```
@@ -133,15 +130,14 @@ impl<T> RangeSet<T> {
     /// # Examples
     ///
     /// ```
-    /// use rangemap::{Range, RangeSet};
-    ///
-    /// let mut set = RangeSet::new();
+    /// # use segmap::*;
+    /// let mut set = SegmentSet::new();
     /// set.insert(0..5);
     ///
-    /// assert_eq!(set.get_range_for(&3), Some(&Range::from(0..5)));
+    /// assert_eq!(set.get_range_for(&3), Some(&Segment::from(0..5)));
     /// assert!(set.get_range_for(&6).is_none());
     /// ```
-    pub fn get_range_for(&self, value: &T) -> Option<&Range<T>>
+    pub fn get_range_for(&self, value: &T) -> Option<&Segment<T>>
     where
         T: Clone + Ord,
     {
@@ -157,16 +153,15 @@ impl<T> RangeSet<T> {
     /// # Examples
     ///
     /// ```
-    /// use rangemap::{Range, RangeSet};
-    ///
-    /// let mut set = RangeSet::new();
+    /// # use segmap::*;
+    /// let mut set = SegmentSet::new();
     /// set.insert(0..5);
     /// assert!(!set.is_empty())
     /// ```
     ///
     /// # See Also
     ///
-    /// - [`RangeMap::insert`] and [`RangeMap::set`] for the internal map's
+    /// - [`SegmentMap::insert`] and [`SegmentMap::set`] for the internal map's
     /// insertion semantics. Because values are always `()` and returning
     /// overwritten values is not necessary, this method uses `set`.
     ///
@@ -183,19 +178,18 @@ impl<T> RangeSet<T> {
     /// # Examples
     ///
     /// ```
-    /// use rangemap::{Range, RangeSet};
-    ///
-    /// let mut set = RangeSet::new();
+    /// # use segmap::*;
+    /// let mut set = SegmentSet::new();
     /// set.insert(0..5);
     /// assert!(set.remove(0..2));
     /// ```
     ///
     /// # See Also
     ///
-    /// - [`RangeMap::remove`] and [`RangeMap::clear_range`] for the internal map's
+    /// - [`SegmentMap::remove`] and [`SegmentMap::clear_range`] for the internal map's
     /// removal semantics. However, this method will not allocate anything to
     /// return.
-    /// - [`RangeSet::take`] if you want the removed elements
+    /// - [`SegmentSet::take`] if you want the removed elements
     ///
     pub fn remove<R>(&mut self, range: R) -> bool
     where
@@ -204,7 +198,7 @@ impl<T> RangeSet<T> {
     {
         let mut removed_ranges = MaybeMap::None;
         self.map
-            .remove_internal(Range::from(&range), &mut removed_ranges);
+            .remove_internal(Segment::from(&range), &mut removed_ranges);
         removed_ranges.into()
     }
 
@@ -214,9 +208,8 @@ impl<T> RangeSet<T> {
     /// # Examples
     ///
     /// ```
-    /// use rangemap::{Range, RangeSet};
-    ///
-    /// let mut set = RangeSet::new();
+    /// # use segmap::*;
+    /// let mut set = SegmentSet::new();
     /// set.insert(0..5);
     /// let removed = set.take(0..2);
     ///
@@ -225,10 +218,10 @@ impl<T> RangeSet<T> {
     ///
     /// # See Also
     ///
-    /// - [`RangeMap::remove`] and [`RangeMap::clear_range`] for the internal map's
+    /// - [`SegmentMap::remove`] and [`SegmentMap::clear_range`] for the internal map's
     /// removal semantics. However, this method will not allocate anything to
     /// return.
-    /// - [`RangeSet::remove`] if you don't want the removed elements
+    /// - [`SegmentSet::remove`] if you don't want the removed elements
     ///
     pub fn take<R>(&mut self, range: R) -> Self
     where
@@ -247,9 +240,8 @@ impl<T> RangeSet<T> {
     /// # Examples
     ///
     /// ```
-    /// use rangemap::{RangeSet, Range};
-    ///
-    /// let mut set = RangeSet::new();
+    /// # use segmap::*;
+    /// let mut set = SegmentSet::new();
     /// set.insert(0..4);
     /// set.insert(5..9);
     /// set.insert(10..14);
@@ -270,12 +262,12 @@ impl<T> RangeSet<T> {
     ///
     /// # See Also
     ///
-    /// - [`RangeMap::retain`], which is called internally
+    /// - [`SegmentMap::retain`], which is called internally
     ///
     pub fn retain<F>(&mut self, mut f: F)
     where
         T: Ord,
-        F: FnMut(&Range<T>) -> bool,
+        F: FnMut(&Segment<T>) -> bool,
     {
         self.map.retain(|r, _| f(r))
     }
@@ -285,14 +277,13 @@ impl<T> RangeSet<T> {
     /// # Examples
     ///
     /// ```
-    /// use rangemap::{Range, RangeSet};
-    ///
-    /// let mut a = RangeSet::new();
+    /// # use segmap::*;
+    /// let mut a = SegmentSet::new();
     /// a.insert(0..1);
     /// a.insert(1..2);
     /// a.insert(2..3);
     ///
-    /// let mut b = RangeSet::new();
+    /// let mut b = SegmentSet::new();
     /// b.insert(2..3);
     /// b.insert(3..4);
     /// b.insert(4..5);
@@ -301,7 +292,7 @@ impl<T> RangeSet<T> {
     ///
     /// // Ranges in a should all be coalesced to 0..5
     /// assert!(a.into_iter().eq(vec![
-    ///     Range::from(0..5)
+    ///     Segment::from(0..5)
     /// ]));
     /// assert!(b.is_empty());
     /// ```
@@ -320,9 +311,8 @@ impl<T> RangeSet<T> {
     /// # Basic Usage
     ///
     /// ```
-    /// use rangemap::{RangeSet, Range, Bound};
-    ///
-    /// let mut a = RangeSet::new();
+    /// # use segmap::*;
+    /// let mut a = SegmentSet::new();
     /// a.insert(0..1);
     /// a.insert(2..3);
     /// a.insert(4..5);
@@ -331,34 +321,33 @@ impl<T> RangeSet<T> {
     /// let b = a.split_off(Bound::Included(4));
     ///
     /// assert!(a.into_iter().eq(vec![
-    ///     Range::from(0..1),
-    ///     Range::from(2..3),
+    ///     Segment::from(0..1),
+    ///     Segment::from(2..3),
     /// ]));
     /// assert!(b.into_iter().eq(vec![
-    ///     Range::from(4..5),
-    ///     Range::from(6..7),
+    ///     Segment::from(4..5),
+    ///     Segment::from(6..7),
     /// ]));
     /// ```
     ///
     /// ## Mixed Bounds
     ///
     /// ```
-    /// use rangemap::{RangeSet, Range, Bound};
-    ///
-    /// let mut a = RangeSet::new();
+    /// # use segmap::*;
+    /// let mut a = SegmentSet::new();
     /// a.insert(0..7);
     ///
     /// let c = a.split_off(Bound::Excluded(4));
     /// let b = a.split_off(Bound::Included(2));
     ///
     /// assert!(a.into_iter().eq(vec![
-    ///     Range::from(0..2)
+    ///     Segment::from(0..2)
     /// ]));
     /// assert!(b.into_iter().eq(vec![
-    ///     Range::from(2..=4)
+    ///     Segment::from(2..=4)
     /// ]));
     /// assert!(c.into_iter().eq(vec![
-    ///     Range::new(Bound::Excluded(4), Bound::Excluded(7))
+    ///     Segment::new(Bound::Excluded(4), Bound::Excluded(7))
     /// ]));
     /// ```
     ///
@@ -374,10 +363,10 @@ impl<T> RangeSet<T> {
     // TODO: split_off_range
 }
 
-impl<T: Clone + Ord> RangeSet<&T> {
-    pub fn cloned(&self) -> RangeSet<T> {
-        RangeSet {
-            map: RangeMap {
+impl<T: Clone + Ord> SegmentSet<&T> {
+    pub fn cloned(&self) -> SegmentSet<T> {
+        SegmentSet {
+            map: SegmentMap {
                 map: self.map.map.iter().map(|(k, _)| (k.cloned(), ())).collect(),
                 store: alloc::vec::Vec::with_capacity(self.map.store.len()),
             },
@@ -385,23 +374,23 @@ impl<T: Clone + Ord> RangeSet<&T> {
     }
 }
 
-impl<T> Default for RangeSet<T>
+impl<T> Default for SegmentSet<T>
 where
     T: Clone + Ord,
 {
     fn default() -> Self {
-        RangeSet::new()
+        SegmentSet::new()
     }
 }
 
-impl<K, V> From<RangeMap<K, V>> for RangeSet<K>
+impl<K, V> From<SegmentMap<K, V>> for SegmentSet<K>
 where
     K: Ord,
 {
-    fn from(map: RangeMap<K, V>) -> Self {
-        let RangeMap { map, store } = map;
-        RangeSet {
-            map: RangeMap {
+    fn from(map: SegmentMap<K, V>) -> Self {
+        let SegmentMap { map, store } = map;
+        SegmentSet {
+            map: SegmentMap {
                 map: map.into_iter().map(|(k, _)| (k, ())).collect(),
                 store,
             },
@@ -412,7 +401,7 @@ where
 // We can't just derive this automatically, because that would
 // expose irrelevant (and private) implementation details.
 // Instead implement it in the same way that the underlying BTreeSet does.
-impl<T: Debug> Debug for RangeSet<T>
+impl<T: Debug> Debug for SegmentSet<T>
 where
     T: Ord + Clone,
 {
@@ -421,7 +410,7 @@ where
     }
 }
 
-impl<T: PartialEq> PartialEq for RangeSet<T> {
+impl<T: PartialEq> PartialEq for SegmentSet<T> {
     fn eq(&self, other: &Self) -> bool {
         self.map == other.map
     }

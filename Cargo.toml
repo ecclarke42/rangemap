@@ -1,17 +1,19 @@
 [package]
-name = "rangemap"
-version = "0.2.0"
-authors = ["Jeff Parsons <jeff@parsons.io>"]
+name = "segmap"
+version = "0.1.0"
+authors = ["Elliott Clarke <ecclarke42@gmail.com", "Jeff Parsons <jeff@parsons.io>"]
 edition = "2018"
 license = "MIT/Apache-2.0"
 readme = "README.md"
-repository = "https://github.com/jeffparsons/rangemap"
-documentation = "https://docs.rs/rangemap"
-homepage = "https://github.com/jeffparsons/rangemap"
+repository = "https://github.com/ecclarke42/segmap"
+documentation = "https://docs.rs/segmap"
+homepage = "https://github.com/ecclarke42/segmap"
 description = """
 Map and set data structures whose keys are stored as ranges.
 
 Contiguous and overlapping ranges that map to the same value are coalesced into a single range.
+
+Originated as a fork of Jeff Parsons' "rangemap"
 """
 categories = ["data-structures"]
 
@@ -24,11 +26,7 @@ rand = "0.8"
 chrono = "0.4" # For examples
 rustc_version = "0.4"
 
-base = { package = "rangemap", git = "https://github.com/jeffparsons/rangemap" } # Compare to more recent published (non-forked) version
-
-[features]
-# So we can run doc tests from "README.md".
-nightly = []
+rangemap = "*" # For benches: compare to more recent published (non-forked) version
 
 [[bench]]
 name = "kitchen_sink"

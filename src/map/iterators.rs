@@ -4,15 +4,17 @@ use core::{
     ops::Bound::*,
 };
 
+use alloc::vec::Vec;
+
 use super::Key;
 use crate::{
-    bounds::{EndBound, StartBound},
-    Range, RangeBounds, RangeMap, RangeSet,
+    segment::{End, Segment, Start},
+    RangeBounds, SegmentMap, SegmentSet,
 };
 
 // TODO: all doctests
 
-impl<K, V> RangeMap<K, V> {
+impl<K, V> SegmentMap<K, V> {
     /// Returns the number of ranges in the map.
     ///
     /// # Examples
@@ -49,6 +51,11 @@ impl<K, V> RangeMap<K, V> {
         self.map.is_empty()
     }
 
+    /// Converts the map into a [`Vec`] by chaining [`into_iter`] and [`collect`]
+    pub fn into_vec(self) -> Vec<(Segment<K>, V)> {
+        self.into_iter().collect()
+    }
+
     /// Gets an iterator over the sorted ranges in the map.
     ///
     /// # Examples
@@ -56,15 +63,14 @@ impl<K, V> RangeMap<K, V> {
     /// Basic usage:
     ///
     /// ```
-    /// use rangemap::{Range, RangeMap};
-    ///
-    /// let mut map = RangeMap::new();
+    /// # use segmap::*;
+    /// let mut map = SegmentMap::new();
     /// map.insert(0..1, "a");
     /// map.insert(1..2, "b");
     /// map.insert(2..3, "c");
     ///
     /// let (first_range, first_value) = map.iter().next().unwrap();
-    /// assert_eq!((*first_range, *first_value), (Range::from(0..1), "a"));
+    /// assert_eq!((*first_range, *first_value), (Segment::from(0..1), "a"));
     /// ```
     pub fn iter(&self) -> Iter<'_, K, V> {
         Iter(self.map.iter())
@@ -79,7 +85,7 @@ impl<K, V> RangeMap<K, V> {
     {
         IterIn {
             iter: self.iter(),
-            range: Range::from(&range),
+            range: Segment::from(&range),
         }
     }
 
@@ -189,15 +195,15 @@ impl<K, V> RangeMap<K, V> {
         R: RangeBounds<K>,
         K: Clone + Ord,
     {
-        let range = Range::new(range.start_bound(), range.end_bound()).cloned();
+        let range = Segment::new(range.start_bound(), range.end_bound()).cloned();
         IterSubset(Some(match (&range.start, &range.end) {
-            (StartBound(Unbounded), EndBound(Unbounded)) => IterSubsetInner::Full(self.iter()),
-            (StartBound(Unbounded), bounded_end) => IterSubsetInner::Partial {
+            (Start(Unbounded), End(Unbounded)) => IterSubsetInner::Full(self.iter()),
+            (Start(Unbounded), bounded_end) => IterSubsetInner::Partial {
                 before: None,
                 iter: self.map.range(..bounded_end.after().unwrap().cloned()),
                 range,
             },
-            (bounded_start, EndBound(Unbounded)) => IterSubsetInner::Partial {
+            (bounded_start, End(Unbounded)) => IterSubsetInner::Partial {
                 before: Some(self.map.range(..bounded_start.clone())),
                 iter: self.map.range(bounded_start.clone()..),
                 range,
@@ -212,13 +218,13 @@ impl<K, V> RangeMap<K, V> {
         }))
     }
 
-    /// Create a `RangeMap` referencing a subset range in `self`
-    pub fn subset<R>(&self, range: R) -> RangeMap<K, &V>
+    /// Create a `SegmentMap` referencing a subset range in `self`
+    pub fn subset<R>(&self, range: R) -> SegmentMap<K, &V>
     where
         R: RangeBounds<K>,
         K: Clone + Ord,
     {
-        RangeMap {
+        SegmentMap {
             map: self.iter_subset(range).map(|(r, v)| (Key(r), v)).collect(),
             store: alloc::vec::Vec::with_capacity(self.store.len()),
         }
@@ -231,12 +237,12 @@ impl<K, V> RangeMap<K, V> {
         }))
     }
 
-    pub fn complement(&self) -> RangeSet<&K>
+    pub fn complement(&self) -> SegmentSet<&K>
     where
         K: Ord,
     {
-        RangeSet {
-            map: RangeMap {
+        SegmentSet {
+            map: SegmentMap {
                 map: self.iter_complement().map(|r| (Key(r), ())).collect(),
                 store: alloc::vec::Vec::with_capacity(self.store.len()),
             },
@@ -255,12 +261,12 @@ impl<K, V> RangeMap<K, V> {
         }
     }
 
-    pub fn gaps(&self) -> RangeSet<&K>
+    pub fn gaps(&self) -> SegmentSet<&K>
     where
         K: Ord,
     {
-        RangeSet {
-            map: RangeMap {
+        SegmentSet {
+            map: SegmentMap {
                 map: self.iter_gaps().map(|r| (Key(r), ())).collect(),
                 store: alloc::vec::Vec::with_capacity(self.store.len()),
             },
@@ -286,22 +292,22 @@ impl<K, V> RangeMap<K, V> {
     // }
 }
 
-impl<K, V> IntoIterator for RangeMap<K, V> {
-    type Item = (Range<K>, V);
+impl<K, V> IntoIterator for SegmentMap<K, V> {
+    type Item = (Segment<K>, V);
     type IntoIter = IntoIter<K, V>;
     fn into_iter(self) -> Self::IntoIter {
         IntoIter(self.map.into_iter())
     }
 }
-impl<'a, K, V> IntoIterator for &'a RangeMap<K, V> {
-    type Item = (&'a Range<K>, &'a V);
+impl<'a, K, V> IntoIterator for &'a SegmentMap<K, V> {
+    type Item = (&'a Segment<K>, &'a V);
     type IntoIter = Iter<'a, K, V>;
     fn into_iter(self) -> Iter<'a, K, V> {
         self.iter()
     }
 }
-impl<'a, K, V> IntoIterator for &'a mut RangeMap<K, V> {
-    type Item = (&'a Range<K>, &'a mut V);
+impl<'a, K, V> IntoIterator for &'a mut SegmentMap<K, V> {
+    type Item = (&'a Segment<K>, &'a mut V);
     type IntoIter = IterMut<'a, K, V>;
     fn into_iter(self) -> IterMut<'a, K, V> {
         self.iter_mut()
@@ -309,7 +315,7 @@ impl<'a, K, V> IntoIterator for &'a mut RangeMap<K, V> {
 }
 
 impl<R: core::ops::RangeBounds<K>, K: Clone + Ord, V: Clone + Eq> FromIterator<(R, V)>
-    for RangeMap<K, V>
+    for SegmentMap<K, V>
 {
     fn from_iter<T: IntoIterator<Item = (R, V)>>(iter: T) -> Self {
         let mut map = Self::new();
@@ -318,7 +324,7 @@ impl<R: core::ops::RangeBounds<K>, K: Clone + Ord, V: Clone + Eq> FromIterator<(
     }
 }
 
-impl<R, K, V> Extend<(R, V)> for RangeMap<K, V>
+impl<R, K, V> Extend<(R, V)> for SegmentMap<K, V>
 where
     R: core::ops::RangeBounds<K>,
     K: Clone + Ord,
@@ -332,12 +338,12 @@ where
     }
 }
 
-/// An iterator over the entries of a `RangeMap`.
+/// An iterator over the entries of a `SegmentMap`.
 ///
-/// This `struct` is created by the [`iter`] method on [`RangeMap`]. See its
+/// This `struct` is created by the [`iter`] method on [`SegmentMap`]. See its
 /// documentation for more.
 ///
-/// [`iter`]: RangeMap::iter
+/// [`iter`]: SegmentMap::iter
 pub struct Iter<'a, K, V>(alloc::collections::btree_map::Iter<'a, Key<K>, V>);
 
 impl<K: Debug, V: Debug> Debug for Iter<'_, K, V> {
@@ -347,27 +353,27 @@ impl<K: Debug, V: Debug> Debug for Iter<'_, K, V> {
 }
 
 impl<'a, K: 'a, V: 'a> Iterator for Iter<'a, K, V> {
-    type Item = (&'a Range<K>, &'a V);
-    fn next(&mut self) -> Option<(&'a Range<K>, &'a V)> {
+    type Item = (&'a Segment<K>, &'a V);
+    fn next(&mut self) -> Option<(&'a Segment<K>, &'a V)> {
         self.0.next().map(|(wrapper, v)| (&wrapper.0, v))
     }
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.0.size_hint()
     }
-    fn last(mut self) -> Option<(&'a Range<K>, &'a V)> {
+    fn last(mut self) -> Option<(&'a Segment<K>, &'a V)> {
         self.next_back()
     }
-    fn min(mut self) -> Option<(&'a Range<K>, &'a V)> {
+    fn min(mut self) -> Option<(&'a Segment<K>, &'a V)> {
         self.next()
     }
-    fn max(mut self) -> Option<(&'a Range<K>, &'a V)> {
+    fn max(mut self) -> Option<(&'a Segment<K>, &'a V)> {
         self.next_back()
     }
 }
 impl<K, V> FusedIterator for Iter<'_, K, V> {}
 
 impl<'a, K: 'a, V: 'a> DoubleEndedIterator for Iter<'a, K, V> {
-    fn next_back(&mut self) -> Option<(&'a Range<K>, &'a V)> {
+    fn next_back(&mut self) -> Option<(&'a Segment<K>, &'a V)> {
         self.0.next_back().map(|(wrapper, v)| (&wrapper.0, v))
     }
 }
@@ -382,15 +388,15 @@ impl<K, V> Clone for Iter<'_, K, V> {
     }
 }
 
-/// An iterator over the entries of a `RangeMap`.
+/// An iterator over the entries of a `SegmentMap`.
 ///
-/// This `struct` is created by the [`iter`] method on [`RangeMap`]. See its
+/// This `struct` is created by the [`iter`] method on [`SegmentMap`]. See its
 /// documentation for more.
 ///
-/// [`iter`]: RangeMap::iter
+/// [`iter`]: SegmentMap::iter
 pub struct IterIn<'a, K, V> {
     iter: Iter<'a, K, V>,
-    range: Range<K>,
+    range: Segment<K>,
 }
 
 impl<K: Clone + Ord + Debug, V: Debug> Debug for IterIn<'_, K, V> {
@@ -400,8 +406,8 @@ impl<K: Clone + Ord + Debug, V: Debug> Debug for IterIn<'_, K, V> {
 }
 
 impl<'a, K: 'a + Ord, V: 'a> Iterator for IterIn<'a, K, V> {
-    type Item = (&'a Range<K>, &'a V);
-    fn next(&mut self) -> Option<(&'a Range<K>, &'a V)> {
+    type Item = (&'a Segment<K>, &'a V);
+    fn next(&mut self) -> Option<(&'a Segment<K>, &'a V)> {
         loop {
             let next = self.iter.next()?;
             if next.0.overlaps(&self.range) {
@@ -409,20 +415,20 @@ impl<'a, K: 'a + Ord, V: 'a> Iterator for IterIn<'a, K, V> {
             }
         }
     }
-    fn last(mut self) -> Option<(&'a Range<K>, &'a V)> {
+    fn last(mut self) -> Option<(&'a Segment<K>, &'a V)> {
         self.next_back()
     }
-    fn min(mut self) -> Option<(&'a Range<K>, &'a V)> {
+    fn min(mut self) -> Option<(&'a Segment<K>, &'a V)> {
         self.next()
     }
-    fn max(mut self) -> Option<(&'a Range<K>, &'a V)> {
+    fn max(mut self) -> Option<(&'a Segment<K>, &'a V)> {
         self.next_back()
     }
 }
 impl<K: Ord, V> FusedIterator for IterIn<'_, K, V> {}
 
 impl<'a, K: 'a + Ord, V: 'a> DoubleEndedIterator for IterIn<'a, K, V> {
-    fn next_back(&mut self) -> Option<(&'a Range<K>, &'a V)> {
+    fn next_back(&mut self) -> Option<(&'a Segment<K>, &'a V)> {
         loop {
             let next = self.iter.next_back()?;
             if next.0.overlaps(&self.range) {
@@ -445,12 +451,12 @@ impl<K: Clone, V> Clone for IterIn<'_, K, V> {
     }
 }
 
-/// A mutable iterator over the entries of a `RangeMap`.
+/// A mutable iterator over the entries of a `SegmentMap`.
 ///
-/// This `struct` is created by the [`iter_mut`] method on [`RangeMap`]. See its
+/// This `struct` is created by the [`iter_mut`] method on [`SegmentMap`]. See its
 /// documentation for more.
 ///
-/// [`iter_mut`]: RangeMap::iter_mut
+/// [`iter_mut`]: SegmentMap::iter_mut
 pub struct IterMut<'a, K: 'a, V: 'a>(alloc::collections::btree_map::IterMut<'a, Key<K>, V>);
 
 impl<K: Debug, V: Debug> Debug for IterMut<'_, K, V> {
@@ -460,9 +466,9 @@ impl<K: Debug, V: Debug> Debug for IterMut<'_, K, V> {
 }
 
 impl<'a, K: 'a, V: 'a> Iterator for IterMut<'a, K, V> {
-    type Item = (&'a Range<K>, &'a mut V);
+    type Item = (&'a Segment<K>, &'a mut V);
 
-    fn next(&mut self) -> Option<(&'a Range<K>, &'a mut V)> {
+    fn next(&mut self) -> Option<(&'a Segment<K>, &'a mut V)> {
         self.0.next().map(|(wrapper, v)| (&wrapper.0, v))
     }
 
@@ -470,21 +476,21 @@ impl<'a, K: 'a, V: 'a> Iterator for IterMut<'a, K, V> {
         self.0.size_hint()
     }
 
-    fn last(mut self) -> Option<(&'a Range<K>, &'a mut V)> {
+    fn last(mut self) -> Option<(&'a Segment<K>, &'a mut V)> {
         self.next_back()
     }
 
-    fn min(mut self) -> Option<(&'a Range<K>, &'a mut V)> {
+    fn min(mut self) -> Option<(&'a Segment<K>, &'a mut V)> {
         self.next()
     }
 
-    fn max(mut self) -> Option<(&'a Range<K>, &'a mut V)> {
+    fn max(mut self) -> Option<(&'a Segment<K>, &'a mut V)> {
         self.next_back()
     }
 }
 
 impl<'a, K: 'a, V: 'a> DoubleEndedIterator for IterMut<'a, K, V> {
-    fn next_back(&mut self) -> Option<(&'a Range<K>, &'a mut V)> {
+    fn next_back(&mut self) -> Option<(&'a Segment<K>, &'a mut V)> {
         self.0.next_back().map(|(wrapper, v)| (&wrapper.0, v))
     }
 }
@@ -505,9 +511,9 @@ impl<K, V> FusedIterator for IterMut<'_, K, V> {}
 //     }
 // }
 
-/// An owning iterator over the entries of a `RangeMap`.
+/// An owning iterator over the entries of a `SegmentMap`.
 ///
-/// This `struct` is created by the [`into_iter`] method on [`RangeMap`]
+/// This `struct` is created by the [`into_iter`] method on [`SegmentMap`]
 /// (provided by the `IntoIterator` trait). See its documentation for more.
 ///
 /// [`into_iter`]: IntoIterator::into_iter
@@ -518,8 +524,8 @@ impl<K: Debug, V: Debug> Debug for IntoIter<K, V> {
     }
 }
 impl<K, V> Iterator for IntoIter<K, V> {
-    type Item = (Range<K>, V);
-    fn next(&mut self) -> Option<(Range<K>, V)> {
+    type Item = (Segment<K>, V);
+    fn next(&mut self) -> Option<(Segment<K>, V)> {
         self.0.next().map(|(wrapper, v)| (wrapper.0, v))
     }
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -527,7 +533,7 @@ impl<K, V> Iterator for IntoIter<K, V> {
     }
 }
 impl<K, V> DoubleEndedIterator for IntoIter<K, V> {
-    fn next_back(&mut self) -> Option<(Range<K>, V)> {
+    fn next_back(&mut self) -> Option<(Segment<K>, V)> {
         self.0.next_back().map(|(wrapper, v)| (wrapper.0, v))
     }
 }
@@ -544,12 +550,12 @@ impl<K, V> FusedIterator for IntoIter<K, V> {}
 //     }
 // }
 
-/// An iterator over the keys of a `RangeMap`.
+/// An iterator over the keys of a `SegmentMap`.
 ///
-/// This `struct` is created by the [`keys`] method on [`RangeMap`]. See its
+/// This `struct` is created by the [`keys`] method on [`SegmentMap`]. See its
 /// documentation for more.
 ///
-/// [`keys`]: RangeMap::keys
+/// [`keys`]: SegmentMap::keys
 pub struct Ranges<'a, K: 'a, V: 'a>(Iter<'a, K, V>);
 impl<K: Debug, V> Debug for Ranges<'_, K, V> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -557,25 +563,25 @@ impl<K: Debug, V> Debug for Ranges<'_, K, V> {
     }
 }
 impl<'a, K, V> Iterator for Ranges<'a, K, V> {
-    type Item = &'a Range<K>;
-    fn next(&mut self) -> Option<&'a Range<K>> {
+    type Item = &'a Segment<K>;
+    fn next(&mut self) -> Option<&'a Segment<K>> {
         self.0.next().map(|(k, _)| k)
     }
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.0.size_hint()
     }
-    fn last(mut self) -> Option<&'a Range<K>> {
+    fn last(mut self) -> Option<&'a Segment<K>> {
         self.next_back()
     }
-    fn min(mut self) -> Option<&'a Range<K>> {
+    fn min(mut self) -> Option<&'a Segment<K>> {
         self.next()
     }
-    fn max(mut self) -> Option<&'a Range<K>> {
+    fn max(mut self) -> Option<&'a Segment<K>> {
         self.next_back()
     }
 }
 impl<'a, K, V> DoubleEndedIterator for Ranges<'a, K, V> {
-    fn next_back(&mut self) -> Option<&'a Range<K>> {
+    fn next_back(&mut self) -> Option<&'a Segment<K>> {
         self.0.next_back().map(|(k, _)| k)
     }
 }
@@ -592,12 +598,12 @@ impl<K, V> Clone for Ranges<'_, K, V> {
     }
 }
 
-/// An iterator over the values of a `RangeMap`.
+/// An iterator over the values of a `SegmentMap`.
 ///
-/// This `struct` is created by the [`values`] method on [`RangeMap`]. See its
+/// This `struct` is created by the [`values`] method on [`SegmentMap`]. See its
 /// documentation for more.
 ///
-/// [`values`]: RangeMap::values
+/// [`values`]: SegmentMap::values
 #[derive(Clone)]
 pub struct Values<'a, K: 'a, V: 'a>(Iter<'a, K, V>);
 
@@ -632,12 +638,12 @@ impl<K, V> ExactSizeIterator for Values<'_, K, V> {
 }
 impl<K, V> FusedIterator for Values<'_, K, V> {}
 
-/// A mutable iterator over the values of a `RangeMap`.
+/// A mutable iterator over the values of a `SegmentMap`.
 ///
-/// This `struct` is created by the [`values_mut`] method on [`RangeMap`]. See its
+/// This `struct` is created by the [`values_mut`] method on [`SegmentMap`]. See its
 /// documentation for more.
 ///
-/// [`values_mut`]: RangeMap::values_mut
+/// [`values_mut`]: SegmentMap::values_mut
 pub struct ValuesMut<'a, K: 'a, V: 'a>(IterMut<'a, K, V>);
 
 // TODO: Debug Impl
@@ -681,12 +687,12 @@ enum IterSubsetInner<'a, K, V> {
     Partial {
         before: Option<alloc::collections::btree_map::Range<'a, Key<K>, V>>,
         iter: alloc::collections::btree_map::Range<'a, Key<K>, V>,
-        range: Range<K>,
+        range: Segment<K>,
     },
 }
 
 impl<'a, K: Clone + Ord, V> Iterator for IterSubset<'a, K, V> {
-    type Item = (Range<K>, &'a V);
+    type Item = (Segment<K>, &'a V);
     fn next(&mut self) -> Option<Self::Item> {
         match self.0.take()? {
             IterSubsetInner::Full(mut iter) => {
@@ -753,14 +759,14 @@ impl<'a, K: Clone + Ord, V> Iterator for IterSubset<'a, K, V> {
 
 pub struct Gaps<'a, K, V> {
     iter: Iter<'a, K, V>,
-    prev: Option<Range<&'a K>>,
+    prev: Option<Segment<&'a K>>,
 }
 
 impl<'a, K, V> Iterator for Gaps<'a, K, V>
 where
     K: Ord,
 {
-    type Item = Range<&'a K>;
+    type Item = Segment<&'a K>;
     fn next(&mut self) -> Option<Self::Item> {
         let next = self.iter.next()?.0.as_ref();
 
@@ -770,10 +776,10 @@ where
             let start = prev.bound_after()?.cloned(); // If none, no more gaps (this extends forwards to infinity)
             let end = next
                 .bound_before()
-                .expect("Unbounded internal range in RangeMap")
+                .expect("Unbounded internal range in SegmentMap")
                 .cloned();
             self.prev.insert(next);
-            Some(Range { start, end })
+            Some(Segment { start, end })
         } else {
             // No previous bound means first gap
 
@@ -791,7 +797,7 @@ where
 
             // Hold on to next
             self.prev = Some(next);
-            Some(Range { start, end })
+            Some(Segment { start, end })
         }
     }
 }
@@ -801,7 +807,7 @@ impl<K: Ord, V> FusedIterator for Gaps<'_, K, V> {}
 pub struct IterComplement<'a, K, V>(Option<ComplementInner<'a, K, V>>);
 enum ComplementInner<'a, K, V> {
     Before {
-        first: Option<&'a Range<K>>,
+        first: Option<&'a Segment<K>>,
         iter: Iter<'a, K, V>,
     },
     Gaps(Gaps<'a, K, V>), // TODO: make gaps generic over iterator? Then Before can use Peekable
@@ -811,7 +817,7 @@ impl<'a, K, V> Iterator for IterComplement<'a, K, V>
 where
     K: Ord,
 {
-    type Item = Range<&'a K>;
+    type Item = Segment<&'a K>;
     fn next(&mut self) -> Option<Self::Item> {
         match self.0.take()? {
             ComplementInner::Before { first, iter } => {
@@ -819,8 +825,8 @@ where
                     let mut gaps = Gaps { iter, prev: None };
                     let out = first
                         .bound_before()
-                        .map(|end| Range {
-                            start: StartBound(Unbounded),
+                        .map(|end| Segment {
+                            start: Start(Unbounded),
                             end,
                         })
                         .or_else(|| gaps.next());
@@ -843,9 +849,9 @@ where
                     // element to get the end bound, otherwise no more gaps!
                     gaps.prev
                         .map(|p| {
-                            p.borrow_bound_after().map(|start| Range {
+                            p.borrow_bound_after().map(|start| Segment {
                                 start,
-                                end: EndBound(Unbounded),
+                                end: End(Unbounded),
                             })
                         })
                         .flatten()
@@ -877,7 +883,7 @@ where
 //         //         let start = prev.bound_after()?.cloned(); // If none, no more gaps (this extends forwards to infinity)
 //         //         let end = next
 //         //             .bound_before()
-//         //             .expect("Unbounded internal range in RangeMap")
+//         //             .expect("Unbounded internal range in SegmentMap")
 //         //             .cloned();
 //         //         self.prev = Some(next);
 //         //         Some(Range { start, end })
@@ -892,7 +898,7 @@ where
 //         //             // Store the end of the next segment for next iteration
 //         //             let end = next
 //         //                 .bound_before()
-//         //                 .expect("Unbounded internal range in RangeMap")
+//         //                 .expect("Unbounded internal range in SegmentMap")
 //         //                 .cloned();
 
 //         //             self.prev = Some(next);

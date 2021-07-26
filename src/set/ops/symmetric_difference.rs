@@ -1,8 +1,8 @@
 use core::{cmp::Ordering::*, fmt::Debug, iter::FusedIterator};
 
-use crate::{map::Key, set::iterators::Iter, Range, RangeMap, RangeSet};
+use crate::{map::Key, set::iterators::Iter, Segment, SegmentMap, SegmentSet};
 
-impl<T> RangeSet<T> {
+impl<T> SegmentSet<T> {
     // TODO: into_difference_iter
 
     pub fn symmetric_difference_iter<'a>(&'a self, other: &'a Self) -> SymmetricDifference<'a, T> {
@@ -16,14 +16,14 @@ impl<T> RangeSet<T> {
 
     // TODO: into_symmetric_difference
 
-    pub fn symmetric_difference<'a>(&'a self, other: &'a Self) -> RangeSet<&'a T>
+    pub fn symmetric_difference<'a>(&'a self, other: &'a Self) -> SegmentSet<&'a T>
     where
         T: Ord,
     {
         // Don't need to insert, since we know ranges produced by the iterator
         // aren't overlapping
-        RangeSet {
-            map: RangeMap {
+        SegmentSet {
+            map: SegmentMap {
                 map: self
                     .symmetric_difference_iter(other)
                     .map(|r| (Key(r), ()))
@@ -35,8 +35,8 @@ impl<T> RangeSet<T> {
 }
 
 /// Set Symmetric Difference
-impl<'a, T: Ord + Clone> core::ops::BitXor<&'a RangeSet<T>> for &'a RangeSet<T> {
-    type Output = RangeSet<&'a T>;
+impl<'a, T: Ord + Clone> core::ops::BitXor<&'a SegmentSet<T>> for &'a SegmentSet<T> {
+    type Output = SegmentSet<&'a T>;
 
     // TODO: docs
 
@@ -54,20 +54,20 @@ impl<'a, T: Ord + Clone> core::ops::BitXor<&'a RangeSet<T>> for &'a RangeSet<T> 
     /// let result_vec: Vec<_> = result.into_iter().collect();
     /// assert_eq!(result_vec, [1, 4]);
     /// ```
-    fn bitxor(self, rhs: &'a RangeSet<T>) -> RangeSet<&'a T> {
+    fn bitxor(self, rhs: &'a SegmentSet<T>) -> SegmentSet<&'a T> {
         self.symmetric_difference(rhs)
     }
 }
 
 // TODO: BitXorAssign for symmetric difference? Maybe omit, unless a good use case comes up
 // /// Set in-place symmetric difference  // TODO: self.into_symmetric_difference() may be quicker for these?
-// impl<T: Ord + Clone> core::ops::BitXorAssign<&RangeSet<T>> for RangeSet<T> {
-//     fn bitxor_assign(&mut self, rhs: &RangeSet<T>) {
+// impl<T: Ord + Clone> core::ops::BitXorAssign<&SegmentSet<T>> for SegmentSet<T> {
+//     fn bitxor_assign(&mut self, rhs: &SegmentSet<T>) {
 
 //     }
 // }
-// impl<T: Ord + Clone> core::ops::BitXorAssign<RangeSet<T>> for RangeSet<T> {
-//     fn sub_assign(&mut self, rhs: RangeSet<T>) {
+// impl<T: Ord + Clone> core::ops::BitXorAssign<SegmentSet<T>> for SegmentSet<T> {
+//     fn sub_assign(&mut self, rhs: SegmentSet<T>) {
 //         for range in rhs.iter() {
 //             self.remove(range);
 //         }
@@ -77,9 +77,9 @@ impl<'a, T: Ord + Clone> core::ops::BitXor<&'a RangeSet<T>> for &'a RangeSet<T> 
 #[derive(Debug, Clone)]
 pub struct SymmetricDifference<'a, T> {
     iter_a: Iter<'a, T>,
-    prev_a: Option<Range<&'a T>>,
+    prev_a: Option<Segment<&'a T>>,
     iter_b: Iter<'a, T>,
-    prev_b: Option<Range<&'a T>>,
+    prev_b: Option<Segment<&'a T>>,
 }
 
 // impl<T: fmt::Debug> fmt::Debug for SymmetricDifference<'_, T> {
@@ -97,9 +97,9 @@ pub struct SymmetricDifference<'a, T> {
 // }
 
 impl<'a, T: Ord> Iterator for SymmetricDifference<'a, T> {
-    type Item = Range<&'a T>;
+    type Item = Segment<&'a T>;
 
-    fn next(&mut self) -> Option<Range<&'a T>> {
+    fn next(&mut self) -> Option<Segment<&'a T>> {
         let next_a = self
             .prev_a
             .take()
@@ -162,7 +162,7 @@ impl<'a, T: Ord> Iterator for SymmetricDifference<'a, T> {
                 // Use the part of `a` before `b` and store
                 // the part after.
                 (Less, Greater) => {
-                    self.prev_a.insert(Range {
+                    self.prev_a.insert(Segment {
                         start: next_b.borrow_bound_after().unwrap(),
                         end: next_a.end,
                     });
@@ -217,7 +217,7 @@ impl<'a, T: Ord> Iterator for SymmetricDifference<'a, T> {
                 // Use the part of `b` before `a` and store
                 // the part after.
                 (Greater, Less) => {
-                    self.prev_b.insert(Range {
+                    self.prev_b.insert(Segment {
                         start: next_a.borrow_bound_after().unwrap(),
                         end: next_b.end,
                     });
@@ -253,7 +253,7 @@ impl<'a, T: Ord> Iterator for SymmetricDifference<'a, T> {
         (0, Some(self.iter_a.len() + self.iter_b.len()))
     }
 
-    fn min(mut self) -> Option<Range<&'a T>> {
+    fn min(mut self) -> Option<Segment<&'a T>> {
         self.next()
     }
 }

@@ -26,7 +26,7 @@ rand = "0.8"
 chrono = "0.4" # For examples
 rustc_version = "0.4"
 
-rangemap = "*" # For benches: compare to more recent published (non-forked) version
+rangemap = "0.1.11" # For benches: compare to more recent published (non-forked) version
 
 [[bench]]
 name = "kitchen_sink"
